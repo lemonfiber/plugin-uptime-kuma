@@ -8,8 +8,9 @@ Guidance for any AI agent working in this repo.
 
 ## What this repo is
 
-A plugin's source: the manifest lemonfiber installs Uptime Kuma from, the proofs
-it declares, and the recorded responses those proofs run against. It is not the
+A plugin's source: the manifest lemonfiber installs Uptime Kuma from — the
+service, what it can do, the proofs it declares and the checks it contributes to
+the doctor — and the recorded responses those run against. It is not the
 reviewed catalogue — that is `lemonfiber-plugins` — and it is not a fork of the
 stack. Contract:
 [plugin-manifest](https://github.com/lemonfiber/spec/blob/main/20-architecture/contracts/plugin-manifest.md).
@@ -47,6 +48,15 @@ manifest carrying one is refused.
   path it does not implement, so a status-only proof passes against a build with
   no API at all.
 - **A proof that could not be run is unproven** (`F3-R5`), never a pass.
+- **A contributed check asks something no credential is needed for.** Everything
+  else this service offers is socket.io, so a check that needed one would report
+  `unrun` on every doctor run until recipes arrive — and a check that quietly
+  never runs is worse than one that fails.
+- **Both capabilities stay namespaced, and that is the answer.** The core
+  vocabulary exists now and neither is in it, because `F9-R3` keeps a capability
+  nothing bundled implements out of the core set and nothing bundled watches
+  endpoints. Do not "fix" that by reaching for a core-looking name;
+  `vocabulary_gate.py` holds this manifest to the published set on every run.
 - **No field beyond the contract's set.** A manifest carrying one is refused by
   name rather than ignored (`ARCH-R84`).
 - **Nothing official about this plugin is a privilege.** If it ever needs one to
@@ -58,12 +68,19 @@ manifest carrying one is refused.
 ```
 python3 .github/interim/validate.py --self-test   # the gate refuses what it should
 python3 .github/interim/validate.py              # the manifest against the contract
-python3 .github/interim/prove.py                  # the manifest's proofs, against the recordings
+python3 .github/interim/prove.py                  # everything declared, against the recordings
 python3 .github/interim/prove.py --against http://127.0.0.1:3001   # against a live one
 python3 .github/interim/image_gate.py             # the digest, its tag, its signature state
 python3 .github/interim/schema_gate.py            # fails the day the real schema lands
-python3 .github/interim/vocabulary_gate.py        # fails the day the capability vocabulary lands
+python3 .github/interim/vocabulary_gate.py        # every claim, against what lemonfiber publishes now
 ```
+
+## The harness is not this repository's
+
+`.github/interim/` is written in
+[`plugin-template`](https://github.com/lemonfiber/plugin-template) and copied
+here byte for byte. The `harness` job fails when the two differ. Change it there
+and copy it here; changing it here fails.
 
 ## Before you open a PR
 

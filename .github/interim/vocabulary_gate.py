@@ -1,119 +1,121 @@
 #!/usr/bin/env python3
-"""Fail the day the core capability vocabulary exists, so inert claims get converted.
+"""Hold this plugin's claims to the vocabulary lemonfiber actually publishes.
 
-`F4-R1` has services declare what they can do as named capabilities so that
-wiring can ask for a capability rather than name a service. `F4-R2` requires the
-core vocabulary to be published, versioned and owned by lemonfiber. Nothing
-publishes one yet.
+Which capability names exist, and which points a contribution may be made at,
+are lemonfiber's to say (`F4-R2`, `F4-R15`). `validate.py` therefore cannot
+decide them, and says so rather than passing: without the published artefacts it
+skips every rule that needs them and names the rules it skipped.
 
-So every capability this plugin claims is namespaced with its own id, which is
-what `F4-R4` requires of a plugin's own — and a namespaced capability is
-**inert until something asks for it**. Today nothing asks. The claims in
-`plugin.toml` are therefore true, validated, and wire nothing.
+This is the half that asks. It reads lemonfiber's own `contract/` at `main` —
+not a release asset, because the artefacts are generated and committed there
+first and a plugin should go red the day a name it claims is withdrawn rather
+than one release later — and runs the rules `validate.py` could not.
 
-That is a gap, not a design, and the danger in it is the same as every stand-in:
-it goes on being quietly true after the thing it was standing in for arrives.
-When lemonfiber publishes the vocabulary, a claim that should have become
-`media.serve` stays `komga:comics-serve` and this plugin silently fails to be a
-candidate for anything.
+Deliberately unpinned. A pinned copy would be a guard that stays green against
+the vocabulary as it was, which is the failure mode of every stand-in: right
+about a moment that has passed. What this plugin is held to is what lemonfiber
+publishes now.
 
-So this register points the other way. If a published core vocabulary appears,
-this **fails**, and asks for the claims to be read against it.
+  * the artefacts are there and this plugin's claims hold — pass
+  * an artefact is missing — fail; they are published with every release and
+    their absence is a regression in lemonfiber rather than a gap here
+  * a claim does not hold — fail, naming it
+  * the forge could not be asked at all — reported, and the run continues.
+    Unproven is not clear, and it is not a failure of this plugin either.
 
-  * no vocabulary published — the expected state. Reported, and the run continues.
-  * one published — fail, naming where it was found.
-
-Needs the network and a token; without either it reports that it could not ask,
-which is unproven rather than clear (`F4-R7`).
-
-Exit 0 = there is still nothing to claim from, 1 = there is.
+Exit 0 = held, or could not be asked; 1 = does not hold.
 """
 
 from __future__ import annotations
 
+import base64
 import json
-import os
 import pathlib
 import subprocess
 import sys
 import tomllib
 
+import validate
+
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 UPSTREAM = "lemonfiber/lemonfiber"
+REF = "main"
 
-# Where a published vocabulary would be. The web API contract is already attached
-# to every release as `web-api.contract.json`, and `ARCH-R78` has the same set
-# served from `GET /api/capabilities` — so a published file would arrive the same
-# way and be named for it.
-VOCABULARY_NAMES = (
-    "capabilities.json",
-    "capability-vocabulary.json",
-    "core-capabilities.json",
+# Where lemonfiber keeps its generated artefacts. The web API contract has lived
+# beside these since 0.9.0, which is why this is the directory rather than a
+# release asset: one is written when the change lands, the other when a release
+# is cut.
+PUBLISHED = (
+    f"contract/{validate.VOCABULARY}",
+    f"contract/{validate.EXTENSION_POINTS}",
 )
 
 
-def claimed() -> list[str]:
-    manifest = tomllib.loads((ROOT / "plugin.toml").read_text(encoding="utf-8"))
-    return list(manifest["service"][0].get("provides", []))
+def fetch(path: str) -> tuple[dict | None, str | None]:
+    """One generated artefact out of lemonfiber's own tree, or why not.
 
-
-def releases() -> tuple[list[dict], str | None]:
-    if not (os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")):
-        return [], "no token in the environment, so the forge was not asked"
+    The forge is asked before anything is concluded about whether it could be. A
+    token in the environment is how the workflow authenticates and it is not how an
+    author at a shell does — `gh` holds one for them — and refusing to ask because
+    one variable is unset reported *unproven* to somebody who could have had the
+    answer. Unproven when the answer was available is the failure this file exists
+    to avoid, not an instance of caution.
+    """
     asked = subprocess.run(
-        ["gh", "api", f"repos/{UPSTREAM}/releases", "--paginate"],
+        ["gh", "api", f"repos/{UPSTREAM}/contents/{path}?ref={REF}"],
         capture_output=True, text=True, check=False,
     )
     if asked.returncode != 0:
-        return [], f"the forge did not answer: {asked.stderr.strip()[:200]}"
+        if "Not Found" in asked.stderr or "404" in asked.stderr:
+            return None, f"absent: {UPSTREAM}@{REF} carries no {path}"
+        return None, f"the forge did not answer: {asked.stderr.strip()[:200]}"
     try:
-        return json.loads(asked.stdout), None
-    except ValueError as unreadable:
-        return [], f"the forge's answer was not readable: {unreadable}"
-
-
-def published(found: list[dict]) -> list[tuple[str, str]]:
-    return [
-        (release["tag_name"], asset["name"])
-        for release in found
-        for asset in release.get("assets", [])
-        if asset["name"] in VOCABULARY_NAMES
-    ]
+        answered = json.loads(asked.stdout)
+        return json.loads(base64.b64decode(answered["content"])), None
+    except (KeyError, ValueError) as unreadable:
+        return None, f"{path} was not readable: {unreadable}"
 
 
 def main() -> int:
-    claims = claimed()
-    found, unreachable = releases()
+    artefacts: list[dict] = []
+    for path in PUBLISHED:
+        found, why = fetch(path)
+        if why is not None and why.startswith("absent:"):
+            print(f"::error::{why}")
+            print(
+                "\nThe published artefacts are what a plugin claims against. One that is not "
+                "there is a regression in lemonfiber, not a gap in this plugin — and until it "
+                "is back, nothing can decide whether these claims are claims of anything.",
+                file=sys.stderr,
+            )
+            return 1
+        if why is not None:
+            print(f"Could not ask what lemonfiber publishes: {why}")
+            print("Unproven, not clear. This register says nothing about this run.")
+            return 0
+        artefacts.append(found)
 
-    if unreachable is not None:
-        print(f"Could not ask whether a vocabulary is published: {unreachable}")
-        print("Unproven, not clear. This register says nothing about this run.")
-        return 0
+    published = validate.Published(artefacts[0], artefacts[1])
+    manifest = tomllib.loads((ROOT / validate.MANIFEST).read_text(encoding="utf-8"))
+    report = validate.Report()
+    validate.validate(manifest, report, published)
 
-    carrying = published(found)
-    if carrying:
-        for tag, name in carrying:
-            print(f"::error::{UPSTREAM} {tag} publishes {name}")
-        print(
-            "\nThe core capability vocabulary exists. Every claim this plugin makes is "
-            "namespaced and therefore inert:\n\n  "
-            + "\n  ".join(claims)
-            + "\n\nRead them against the published set. A claim that should be a core name and "
-            "is not means this plugin is not a candidate for anything that asks — which is a "
-            "plugin that installs and wires nothing, and looks exactly like one that works.",
-            file=sys.stderr,
-        )
+    if report.faults:
+        for fault in report.faults:
+            print(f"::error file={validate.MANIFEST}::{fault}")
+        print(f"\n{len(report.faults)} violation(s) against what {UPSTREAM}@{REF} publishes.",
+              file=sys.stderr)
         return 1
 
+    names = ", ".join(sorted(published.names()))
+    points = ", ".join(sorted(published.point_names()))
     print(
-        f"No lemonfiber release publishes a core capability vocabulary, so the "
-        f"{len(claims)} capability claim(s) here are namespaced and inert:"
-    )
-    for claim in claims:
-        print(f"    {claim}")
-    print(
-        "That is F4-R2's gap and not this plugin's choice. The expected state, and this "
-        "check is what ends it."
+        f"Held to {UPSTREAM}@{REF}: capability vocabulary generation "
+        f"{artefacts[0].get('vocabulary_version')}, extension points generation "
+        f"{artefacts[1].get('extension_points_version')}.\n"
+        f"  capabilities: {names}\n"
+        f"  points:       {points}\n"
+        "Every claim and every contribution this manifest makes holds against them."
     )
     return 0
 

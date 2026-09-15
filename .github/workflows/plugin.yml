@@ -7,9 +7,10 @@
 # catalogue runs, or the first time a plugin meets them is in somebody else's
 # pull request.
 #
-# The commands are not the ones it will run. `lemonfiber plugin validate` and
-# `lemonfiber plugin prove` arrive with `0.16.0`, which is planned; `targets.toml`
-# names that release and `.github/interim/` stands in until it exists. The
+# The commands are not the ones it will run. lemonfiber validating a manifest
+# itself is `F10-R3` and nothing ships it yet; what `0.16.0` publishes is the
+# schema and the vocabulary a manifest is held to, `targets.toml` names that
+# release, and `.github/interim/` stands in until the reader arrives. The
 # `schema` job below is what ends the arrangement: it fails the day a lemonfiber
 # release publishes the schema, rather than letting the stand-in quietly outlive
 # it.
@@ -22,6 +23,10 @@ jobs:
   # Against the contract, in one pass, every violation named with its location.
   # The self-test runs first: a gate nobody has seen fail is a gate nobody knows
   # the shape of.
+  #
+  # This half decides nothing that depends on knowing what lemonfiber publishes.
+  # It says which rules it did not decide rather than passing them, and the
+  # `vocabulary` job below is what decides them.
   manifest:
     runs-on: ubuntu-latest
     steps:
@@ -36,9 +41,28 @@ jobs:
       - name: plugin.toml conforms to the contract
         run: python3 .github/interim/validate.py
 
+  # The capability names and extension points this manifest declares into, held
+  # to what lemonfiber publishes now rather than to a copy taken once. A claim
+  # against a vocabulary that has moved is a claim of nothing.
+  vocabulary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Every claim and contribution, against what lemonfiber publishes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/interim/vocabulary_gate.py
+
   # Against the recordings, which is what lets this run with no live instance
   # anywhere (F10-R4). A proof that could not be run is reported unproven and is
-  # not counted as a pass (F3-R5).
+  # not counted as a pass (F3-R5). The report is committed, so a run that would
+  # write a different one fails rather than silently disagreeing with the record
+  # the release train reads.
   proofs:
     runs-on: ubuntu-latest
     steps:
@@ -48,8 +72,10 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - name: Every declared proof, against the recorded responses
-        run: python3 .github/interim/prove.py --against fixtures
+      - name: Everything this manifest declares, against the recorded responses
+        run: python3 .github/interim/prove.py --against fixtures --report proofs.json
+      - name: The committed report is the one this run would write
+        run: git diff --exit-code proofs.json
 
   # The declared digest is in the registry, the tag beside it still names it,
   # and whether anything signed it — reported as unproven where nothing did,
@@ -66,22 +92,8 @@ jobs:
       - name: The image this plugin installs
         run: python3 .github/interim/image_gate.py
 
-  # Two registers, both pointing the other way: they fail when the thing they
-  # stand in for arrives, so a stand-in cannot quietly outlive it.
-  vocabulary:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-      - name: Has the core capability vocabulary arrived
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 .github/interim/vocabulary_gate.py
-
+  # A register pointing the other way: it fails when the thing it stands in for
+  # arrives, so a stand-in cannot quietly outlive it.
   schema:
     runs-on: ubuntu-latest
     steps:
@@ -95,3 +107,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 .github/interim/schema_gate.py
+
+  # `.github/interim/` exists byte for byte in three plugin repositories, and
+  # `plugin-template` is where it is written. A copy that has quietly drifted is
+  # worse than none, because it is trusted: the gate here would go on reporting
+  # passes the template's own rules no longer grant.
+  harness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The harness here is the template's harness
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh repo clone lemonfiber/plugin-template "$RUNNER_TEMP/template" -- --depth 1
+          diff -ru "$RUNNER_TEMP/template/.github/interim" .github/interim

@@ -60,12 +60,15 @@ takes_data  = false
 # named here. See spec#386 and README.md for the run that showed both halves.
 config_path = "/app/data"
 
-# What it can do (F4-R1), namespaced with the plugin's id because the core
-# vocabulary F4-R2 owes is not published yet and a plugin may not invent a
-# core-looking name (F4-R4). Nothing bundled watches endpoints, so even once that
-# vocabulary exists these two are unlikely to become core names: F9-R3 keeps a
-# capability nothing bundled implements out of it. That is the right answer and
-# not a gap — an ecosystem vocabulary is what namespaces are for.
+# What it can do (F4-R1), namespaced with the plugin's id (F4-R4).
+#
+# The core vocabulary exists now, and neither of these is in it. That was the
+# prediction here before it was published and it is the right answer rather than
+# a gap: F9-R3 keeps a capability nothing bundled implements out of the core set,
+# nothing bundled watches endpoints, and a namespace is exactly what an ecosystem
+# vocabulary is for. What changed is that it is now a fact rather than a guess —
+# `vocabulary_gate.py` holds this manifest to the published set on every run, and
+# would go red the day one of these names became a core one.
 provides = [
     "uptime-kuma:endpoint-monitor",
     "uptime-kuma:status-page",
@@ -76,18 +79,23 @@ provides = [
 dashboard_group = "Automation"
 
 [requires]
-capabilities = ["service.add", "service.health.http"]
+capabilities = ["service.add", "service.health.http", "doctor.contribute"]
 
 # ─── Proofs ──────────────────────────────────────────────────────────────────
 #
-# Both assert a body, and here that is not a stylistic preference. Measured:
+# Every one asserts a body, and here that is not a stylistic preference. Measured,
+# before this service's database exists and after:
 #
-#   /api/entry-page              -> 200  {"type":"setup-database"}
-#   /api/push/abc123             -> 200  <!DOCTYPE html><html lang="en">…
-#   /api/status-page/nonexistent -> 200  <!DOCTYPE html><html lang="en">…
-#   /api/badge/1/status          -> 200  <!DOCTYPE html><html lang="en">…
+#                                    before                     after
+#   /api/entry-page              ->  200 {"type":"setup-…"}     200 {"type":"entryPage"}
+#   /api/not-a-real-path         ->  200 <!DOCTYPE html>…       200 <!DOCTYPE html>…
+#   /api/push/abc123             ->  200 <!DOCTYPE html>…       404 {"ok":false,…}
+#   /api/status-page/nonexistent ->  200 <!DOCTYPE html>…       404 {"status":"fail"…}
 #
 # A proof reading a status here would pass against a build with no API at all.
+# The right-hand column is why the second proof asks `/api/not-a-real-path`: the
+# push path answers the app shell only while there is no database, so a proof
+# over it describes a fresh container rather than this image.
 
 [[proof]]
 id      = "uptime-kuma.serves"
@@ -110,16 +118,23 @@ id      = "uptime-kuma.status-is-not-an-answer"
 title   = "An unimplemented path answers 200, so a status proves nothing here"
 fixture = "fixtures/api-unimplemented-path.json"
 why     = """
-Asked for a push endpoint with a token that does not exist, this service returns
-200 and its single-page app. That is not a defect — it is how a client-routed
-application serves deep links — but it means the usual shorthand for "is it up"
-is worthless against this image.
+Asked for a path it implements at all, this service returns 200 and its
+single-page app. That is not a defect — it is how a client-routed application
+serves deep links — but it means the usual shorthand for "is it up" is worthless
+against this image.
 
 Recording it makes the reason the health path is `/api/entry-page` reviewable
 rather than folklore, and turns a future change in this behaviour into a red
 proof rather than a probe that has quietly gone blind.
+
+It asks `/api/not-a-real-path` rather than a push endpoint with a token that does
+not exist, and the difference was found by running it. The push path answers the
+app shell only while this service has no database; once it has one, that path is
+a real endpoint answering a real 404. A proof over it described a fresh container
+rather than this image — it passed against its recording and failed against a
+running instance, which is what a fixture drifting looks like from the outside.
 """
-request = { method = "GET", path = "/api/push/a-token-that-does-not-exist" }
+request = { method = "GET", path = "/api/not-a-real-path" }
 expect  = { status = 200, content_type = "text/html", json_is_absent = true, body_starts_with = "<!DOCTYPE html>" }
 
 [[proof]]
@@ -140,3 +155,90 @@ went with it.
 """
 request = { method = "GET", path = "/api/entry-page" }
 expect  = { status = 200, content_type = "application/json", json = { type = "entryPage" } }
+
+# ─── Contributions ───────────────────────────────────────────────────────────
+#
+# A row in a register lemonfiber already runs, never an interpreter of its own
+# (F3-R26). Both capabilities above are inert, so this is where this plugin is
+# useful rather than merely readable: it adds two things lemonfiber will say
+# about the stack that lemonfiber could not have known to say.
+#
+# Both ask something no credential is needed for, deliberately. This service has
+# no REST API beyond what an anonymous caller can reach — everything else is
+# socket.io — so a check needing a credential would report `unrun` on every
+# doctor run until recipes arrive, and a check that quietly never runs is worse
+# than one that fails.
+
+[[contribution]]
+at        = "doctor.check"
+id        = "uptime-kuma:set-up"
+title     = "Uptime Kuma has been set up, rather than waiting at its first-run screen"
+category  = "services"
+timeout_s = 10
+fixture   = "fixtures/api-entry-page-set-up.json"
+why       = """
+An Uptime Kuma nobody has opened is running, healthy, green in `lemonfiber ps` —
+and watching nothing. That is the failure this service has: not that it goes
+down, but that it never started doing the one thing it was installed for, and
+every surface reports it as fine.
+
+`/api/entry-page` is the one anonymous answer that tells the two apart:
+`setup-database` before its database exists and `entryPage` afterwards. Nothing
+else here distinguishes them, which is why this is a check rather than a note in
+a README.
+"""
+request   = { method = "GET", path = "/api/entry-page" }
+expect    = { status = 200, json = { type = "entryPage" } }
+
+[[contribution]]
+at     = "doctor.remedy"
+id     = "uptime-kuma:finish-setting-it-up"
+for    = "uptime-kuma:set-up"
+action = "Open Uptime Kuma and finish setting it up, then add a monitor for each thing you would want to know had gone"
+why    = """
+It is running and it is watching nothing. Until somebody opens it, the thing
+installed to notice failures is the one failure nothing is noticing.
+"""
+detail = """
+The first screen creates the database and the administrator account. Both are
+kept under the declared configuration directory, so they survive a container
+being replaced — which is what the `state-outlives-its-container` proof
+establishes.
+"""
+
+[[contribution]]
+at        = "doctor.check"
+id        = "uptime-kuma:api-still-answers-json"
+title     = "The path the health probe asks for still answers with this service's own state"
+category  = "config"
+timeout_s = 10
+fixture   = "fixtures/api-entry-page-set-up.json"
+why       = """
+This image answers 200 with its single-page app for every path it does not
+implement. That is how a client-routed application serves deep links, and it
+means a health probe here can go blind without going red: if `/api/entry-page`
+ever stopped being an API path, the probe would keep passing against the app
+shell and lifecycle would keep waiting on nothing.
+
+A proof asks this once, at install. This asks it on every doctor run, which is
+when an image bump could have moved it.
+"""
+request   = { method = "GET", path = "/api/entry-page" }
+expect    = { status = 200, content_type = "application/json", json_has_keys = ["type"] }
+
+[[contribution]]
+at     = "doctor.remedy"
+id     = "uptime-kuma:the-probe-has-gone-blind"
+for    = "uptime-kuma:api-still-answers-json"
+action = "Treat the health probe as unproven and pin the image back until the path is confirmed"
+why    = """
+The path lifecycle waits on is answering the application shell rather than this
+service's own state, so a passing health probe is no longer evidence that
+anything inside is listening.
+"""
+detail = """
+This service answers 200 with its single-page app for every unimplemented path,
+so an API path that has moved looks identical to one that is working. The
+recorded responses in this repository name the digest they came from; comparing
+them against the running image is what tells you which release moved it.
+"""
