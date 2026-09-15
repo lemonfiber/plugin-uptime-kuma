@@ -113,10 +113,12 @@ be set and `/app/data` cannot be bound. The generated container mounts a
 directory the application never reads, and every monitor, notification channel
 and history entry lives in the container's writable layer until it is replaced.
 
-The bundled stack has this exact problem and solves it in `compose/`: Seerr
-mounts `./config/seerr:/app/config`, Bazarr `/config/config`, Audiobookshelf
-takes a second mount for `/metadata`. Four of the twenty bundled services keep
-their configuration somewhere other than `/config`. A plugin cannot.
+The bundled stack has this exact problem and solves it in `compose/`, two
+different ways. Three services mount their configuration somewhere other than
+`/config` — Homepage and Seerr at `/app/config`, Caddy at a single file under
+`/etc/caddy` — and two more need a mount beside it, Jellyfin for `/cache` and
+Audiobookshelf for `/metadata`. Five of the twenty, and a plugin can do
+neither thing.
 
 **This is reported rather than worked around.** No privilege is asked for here,
 no field is invented, and the manifest claims nothing that is not true. What it
