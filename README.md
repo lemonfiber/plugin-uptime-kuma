@@ -3,147 +3,186 @@
 **Uptime Kuma as a lemonfiber plugin.** Watches the things the stack depends on
 and tells you which one went, rather than that something did.
 
-A media stack fails in a way that hides its own cause. An indexer stops
-answering and what you see is a search returning nothing; a tracker goes down
-and what you see is a download that never starts. This watches the endpoints
-directly, so the first thing you read is the one that broke.
+A media stack fails in a way that hides its own cause. An indexer stops answering
+and what you see is a search returning nothing; a tracker goes down and what you
+see is a download that never starts. This watches the endpoints directly, so the
+first thing you read is the one that broke.
 
 ## What it is
 
-Three files and a directory, and none of it runs:
+One manifest and a directory of recordings. Nothing here runs:
 
 | Path | What |
 | --- | --- |
-| `plugin.toml` | The manifest. Identity, the one service, and what it needs of lemonfiber |
-| `proofs.toml` | The proofs it declares, and why each one is worth asserting |
+| `plugin.toml` | The whole plugin: identity, the service, what it can do, how the stack reaches it, and the proofs that must pass before it installs |
 | `fixtures/` | Recorded responses the proofs run against, so nobody needs a live instance |
 | `targets.toml` | The lemonfiber release this is validated and proved against |
 
 ## What the manifest declares
 
 ```toml
-image  = "docker.io/louislam/uptime-kuma"
-digest = "sha256:917318f9d7be5257f43ba412c766a473be336eb451d70744f3b482d0c3997c0e"
-tag    = "2.5.4"
-port   = 3001
-bind   = "loopback"
-health = { kind = "http", path = "/api/entry-page", timeout_s = 90 }
+[[service]]
+image       = "docker.io/louislam/uptime-kuma"
+digest      = "sha256:917318f9d7be5257f43ba412c766a473be336eb451d70744f3b482d0c3997c0e"
+tag         = "2.5.4"
+port        = 3001
+bind        = "loopback"
+health      = { kind = "http", path = "/api/entry-page", timeout_s = 90 }
 criticality = "enhancing"
 takes_data  = false
-forms  = ["full"]
+config_path = "/app/data"
+provides    = ["uptime-kuma:endpoint-monitor", "uptime-kuma:status-page"]
+
+[wiring]
+dashboard_group = "Automation"
 ```
 
-**`bind = "loopback"`, not `lan`.** It holds the credentials for every
-notification channel it sends on and can be pointed at any address the machine
-can reach. That puts it in the tier the automation apps are in rather than the
-one the library server is in.
+**`loopback`, not `lan`.** It holds the credentials for every channel it notifies
+on and can be pointed at any address the machine can reach. That is the tier the
+automation apps are in — so it appears on the dashboard, and it gets **no proxy
+hostname**. `[wiring]` names none, and there is no field by which it could ask:
+the tier decides, not the plugin (`ARCH-R104`).
 
-**`takes_data = false`.** It watches endpoints. It reads no library, so the data
-root is not mounted, and the generated container has no way to ask for it.
+**`takes_data = false`.** It watches endpoints and reads no library, so the data
+root is not mounted and the generated container has no way to ask for it.
 
-## The proofs, and why both are about the body
+## `config_path = "/app/data"` — the line this plugin exists to justify
+
+This image has no `/config`. It keeps its database, its uploads and its
+notification configuration at `/app/data`.
+
+Before `config_path` existed, lemonfiber generated every plugin's container with
+its configuration directory mounted at `/config`, and this plugin was **broken
+two different ways depending on which user the container ran as**. Both measured,
+not reasoned about:
+
+**As the image's own user** — installs cleanly, answers its health probe, and
+loses everything on recreate:
+
+```
+fresh:            {"type":"setup-database"}
+after setup:      {"type":"entryPage","entryPage":null}
+host /config:     ''                                    ← nothing was written here
+in-container:     db-config.json kuma.db kuma.db-shm …  ← state is in the writable layer
+after recreate:   {"type":"setup-database"}             ← every monitor gone
+```
+
+**As a non-root user** — does not start at all:
+
+```
+state: exited  exit=0
+  errno: -13, code: 'EACCES', syscall: 'mkdir', path: 'data/upload/'
+```
+
+With the target declared, the same sequence keeps its state:
+
+```
+after setup:      {"type":"entryPage","entryPage":null}
+container removed entirely with `docker rm -f`
+host mount keeps: db-config.json docker-tls kuma.db kuma.db-shm kuma.db-wal screenshots upload
+after recreate:   {"type":"entryPage","entryPage":null}   ← still set up
+```
+
+One directory, one mount, the source still lemonfiber's. Only the target is named
+here, and it is checked: one absolute path, not the root, not inside the data
+root.
+
+This was reported as a defect in the plugin model rather than worked around, and
+the model was changed — [spec#386](https://github.com/lemonfiber/spec/pull/386),
+`F3-R32` and `ARCH-R100`. `/config` is a LinuxServer.io convention, not a
+standard: five of the twenty bundled services keep their configuration elsewhere
+and the stack's `compose/` says so for each.
+
+## What it can do, and why that currently wires nothing
+
+`provides` is the capability model's plugin side (`F4-R1`). Both claims are
+namespaced with the plugin's id, because a plugin may not invent a core-looking
+name (`F4-R4`) — and a namespaced capability is inert until something asks for
+it. Nothing asks: the core vocabulary is `F4-R2`'s and is not published.
+
+Unlike Komga's, these two are likely to **stay** namespaced. `F9-R3` keeps a
+capability nothing bundled implements out of the core set, and nothing bundled
+watches endpoints. That is the right answer rather than a gap — an ecosystem
+vocabulary is what namespaces are for. `.github/interim/vocabulary_gate.py` still
+fires when a vocabulary is published, so the question gets asked rather than
+assumed.
+
+## The proofs, and why all three are about the body
 
 This service answers **HTTP 200 to every path it does not implement**, serving
-its single-page app as the fallback. `/`, `/metrics`, `/api/push/<anything>` and
-a path invented on the spot all return 200 with the same HTML. Verified, not
-assumed:
+its single-page app as the fallback. Measured:
 
 ```
-kuma /api/entry-page              -> 200  {"type":"setup-database"}
-kuma /api/push/abc123             -> 200  <!DOCTYPE html><html lang="en">…
-kuma /api/status-page/nonexistent -> 200  <!DOCTYPE html><html lang="en">…
-kuma /api/badge/1/status          -> 200  <!DOCTYPE html><html lang="en">…
+/api/entry-page              -> 200  {"type":"setup-database"}
+/api/push/abc123             -> 200  <!DOCTYPE html><html lang="en">…
+/api/status-page/nonexistent -> 200  <!DOCTYPE html><html lang="en">…
+/api/badge/1/status          -> 200  <!DOCTYPE html><html lang="en">…
 ```
 
-So a probe that read a status here would pass against a build with no API at
-all — and against a container that had been replaced, once Docker's own port
-proxy is in front of it.
+A proof that read a status here would pass against a build with no API at all —
+and against a container that had been emptied, once Docker's port proxy is in
+front of it.
 
 | Proof | What it establishes |
 | --- | --- |
 | `uptime-kuma.serves` | `/api/entry-page` answers with JSON about *this* instance, which is the only path that does |
 | `uptime-kuma.status-is-not-an-answer` | An unimplemented path answers 200 with HTML — the property that makes the first proof's shape necessary |
+| `uptime-kuma.state-outlives-its-container` | Set up, destroyed and recreated, it is still set up. The proof that `config_path` is doing its job |
 
-The second is not a proof that the service works. It pins the reason the health
-path is what it is, so that a future change in this behaviour goes red rather
-than leaving a probe that has quietly gone blind.
+The third is the one that would have caught this plugin being broken, and it is
+recorded from a container that was genuinely removed and recreated rather than
+restarted.
 
 ## What was proved by running, and what only by validating
 
 Proved by running, on `docker.io/louislam/uptime-kuma@sha256:917318f9…`:
 
-- the image starts as a non-root user and answers;
-- both proofs pass against the live container;
-- both report **unproven** — not failed, and not passed — against the same
+- the image starts as a non-root user against the declared `config_path` and
+  answers;
+- all three proofs pass against the live container;
+- the first two report **unproven** — not failed, not passed — against the same
   published port with the process replaced by `sleep infinity`;
-- the digest resolves in the registry, `2.5.4` still names it, and **no
-  signature is offered for it**, which is recorded as unproven rather than
-  verified.
+- the state genuinely survives `docker rm -f` and a new container on the same
+  mount, and genuinely does not survive it under the old `/config` shape;
+- the digest resolves, `2.5.4` still names it, and **no signature is offered**,
+  recorded as unproven rather than verified.
 
 Proved only by validating:
 
-- that the manifest conforms. There is no published schema to conform *to*, so
-  it is checked against the contract document by hand.
+- that the manifest conforms, including the loopback-gets-no-hostname rule. There
+  is no published schema to conform *to*, so it is checked against the contract
+  document, and `schema_gate.py` fails the day a real one is published.
 
-**Not proved at all, and not claimed:** that lemonfiber installs this. The
-release that implements plugins is `0.16.0` and it is planned.
+**Not proved at all, and not claimed:** that lemonfiber installs this, generates
+the mount at the declared path, or puts the dashboard entry in the Automation
+group. `0.16.0` is planned. The persistence evidence above is `docker run` doing
+by hand what the generated container would do — which is why the manifest now has
+a field to say it, but is not a claim that an installer has done it.
 
-## The defect this plugin found, which it cannot work around
+## What is deliberately not here
 
-**Under the plugin format as it stands, this service loses its state on every
-container recreate.**
+No `[[secret]]` and no `[[override]]`. Uptime Kuma's notification credentials are
+entered in its own UI and lemonfiber captures none of them; this plugin changes no
+bundled setting. Both blocks exist in the format (`F3-R17`, `F3-R18`); a plugin
+that holds nothing declares nothing — and in this version nothing *could* capture
+one, because capture is a recipe and recipes arrive with `F8`.
 
-lemonfiber writes a plugin's container itself, and the mount set is fixed: the
-data root where `takes_data` asks for it, and the plugin's own configuration
-directory at `/config`. That is deliberate and right — it is what makes "what
-can this plugin reach" answerable from the format rather than from the instance.
-
-This image keeps its database at `/app/data`. Verified:
-
-```
-$ docker exec … ls /config
-no /config in image
-$ docker exec … ls /app/data
-docker-tls  screenshots  upload
-```
-
-There is no field by which the manifest can say so. `environment` is not in the
-permitted set, and neither is a mount target — so `UPTIME_KUMA_DATA_DIR` cannot
-be set and `/app/data` cannot be bound. The generated container mounts a
-directory the application never reads, and every monitor, notification channel
-and history entry lives in the container's writable layer until it is replaced.
-
-The bundled stack has this exact problem and solves it in `compose/`, two
-different ways. Three services mount their configuration somewhere other than
-`/config` — Homepage and Seerr at `/app/config`, Caddy at a single file under
-`/etc/caddy` — and two more need a mount beside it, Jellyfin for `/cache` and
-Audiobookshelf for `/metadata`. Five of the twenty, and a plugin can do
-neither thing.
-
-**This is reported rather than worked around.** No privilege is asked for here,
-no field is invented, and the manifest claims nothing that is not true. What it
-needs is a way for a manifest to name where in its container the configuration
-directory is mounted — one string, no new reach, since lemonfiber still chooses
-the source and there is still exactly one of them.
-
-Until that exists, this plugin is correct, validates, proves itself, and installs
-something an operator would have to re-create after every image bump. Which is
-worth knowing before installing it, and is why it is at the top of this section
-rather than the bottom.
+No proxy hostname, because the tier refuses it. No dashboard widget, because a
+widget needs a credential.
 
 ## Where this repository is not the catalogue
 
 `lemonfiber-plugins` is the reviewed catalogue, and this is not it. This is a
-plugin's **source** — the thing `F10-R9` says publishing requires and no more
-than: a git repository. `F10-R7` is why its CI runs what it runs: the same
-commands the catalogue's CI runs, so the first time a plugin meets them is not
-in somebody else's pull request.
+plugin's **source** — what `F10-R9` says publishing requires and no more than: a
+git repository. `F10-R7` is why its CI runs the same commands the catalogue's CI
+runs.
 
 ## Being official buys this nothing
 
 Same schema validation, same digest pinning, same signature verification, same
-proof runs as any plugin written by anybody. There is no trust bit and no
-shortcut — and the defect above was not waived for one.
+proof runs as any plugin written by anybody. When this plugin turned out to be
+unshippable under the model as it stood, the model was fixed for everybody — not
+waived for this one.
 
 ## Licence
 

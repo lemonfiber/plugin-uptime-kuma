@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Run this plugin's declared proofs — until `lemonfiber plugin prove` exists.
 
-**This is CI harness, not plugin content.** A plugin is `plugin.toml`,
-`proofs.toml` and `fixtures/`. Nothing under `.github/` is installed, and
-lemonfiber never runs any of it (`F3-R6`).
+**This is CI harness, not plugin content.** A plugin is `plugin.toml` and the
+recordings in `fixtures/`. Nothing under `.github/` is installed, and lemonfiber
+never runs any of it (`F3-R6`).
 
 `F3-R3` says a plugin's declared proofs run in the existing verification engine,
 the same way the bundled ones do. That engine is in lemonfiber, and the verbs
@@ -35,7 +35,7 @@ import urllib.error
 import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-PROOFS = "proofs.toml"
+MANIFEST = "plugin.toml"
 ATTEMPT_TIMEOUT_S = 10
 
 PASS, FAIL, UNPROVEN = "pass", "fail", "unproven"
@@ -174,13 +174,13 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    path = ROOT / PROOFS
+    path = ROOT / MANIFEST
     if not path.is_file():
-        print(f"::error::{PROOFS} is missing")
+        print(f"::error::{MANIFEST} is missing")
         return 1
     declared = tomllib.loads(path.read_text(encoding="utf-8")).get("proof", [])
     if not declared:
-        print(f"::error::{PROOFS} declares no proof")
+        print(f"::error::{MANIFEST} declares no proof, and a plugin whose proofs do not pass is not installed")
         return 1
 
     if args.against == "fixtures":
