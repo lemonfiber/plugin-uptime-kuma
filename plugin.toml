@@ -1,0 +1,50 @@
+# Uptime Kuma, as a lemonfiber plugin.
+#
+# Contract: https://github.com/lemonfiber/spec/blob/main/20-architecture/contracts/plugin-manifest.md
+#
+# Everything lemonfiber does on this plugin's behalf comes from this file, and it
+# knows nothing about the plugin that is not declared here (ARCH-R83). Nothing in
+# it is executable, and nothing in it can be (F3-R1, F3-R6).
+
+schema_version = 1
+
+[plugin]
+id          = "uptime-kuma"
+name        = "Uptime Kuma"
+version     = "1.0.0"
+description = "Watches the things the stack depends on and tells you which one went, rather than that something did"
+without_it  = "You find out an indexer, a tracker or the connection itself is down from whatever stopped working because of it"
+upstream    = "https://github.com/louislam/uptime-kuma"
+license     = "MIT"
+forms       = ["full"]
+
+# One form, and the widest one. What this watches is the whole stack and the
+# things outside it that the whole stack needs; an operator running `search`
+# alone has nothing for it to do that a glance would not answer faster.
+
+[[service]]
+id     = "uptime-kuma"
+name   = "Uptime Kuma"
+image  = "docker.io/louislam/uptime-kuma"
+# What actually runs (F3-R8, ARCH-R95). `tag` is the readable name for this
+# digest and is never resolved.
+digest = "sha256:917318f9d7be5257f43ba412c766a473be336eb451d70744f3b482d0c3997c0e"
+tag    = "2.5.4"
+port   = 3001
+# Admin, not household. It holds the credentials for every notification channel
+# it sends on, and it can be pointed at any address the machine can reach — both
+# of which put it in the tier the *arrs are in rather than the one the library
+# server is in.
+bind   = "loopback"
+# The path matters more here than in most: this service answers 200 with its
+# single-page app for every path it does not implement, so a probe on `/` would
+# pass against a build with no API at all. `/api/entry-page` is the one that
+# answers with its own state. `proofs.toml` pins that property so it cannot
+# change under this line without something going red.
+health = { kind = "http", path = "/api/entry-page", timeout_s = 90 }
+criticality = "enhancing"
+# It watches endpoints. It reads no library, and the data root is not mounted.
+takes_data  = false
+
+[requires]
+capabilities = ["service.add", "service.health.http"]

@@ -1,0 +1,16 @@
+{
+  "recorded_from": "docker.io/louislam/uptime-kuma@sha256:917318f9d7be5257f43ba412c766a473be336eb451d70744f3b482d0c3997c0e",
+  "note": "A path this service does not implement. It answers 200 with the single-page app, which is why a proof about this service must assert a body and never a status.",
+  "request": {
+    "method": "GET",
+    "path": "/api/push/a-token-that-does-not-exist"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/html; charset=utf-8"
+    },
+    "json": null,
+    "body_starts_with": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta charset=\"U"
+  }
+}

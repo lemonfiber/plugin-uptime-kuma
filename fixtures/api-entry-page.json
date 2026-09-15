@@ -1,0 +1,17 @@
+{
+  "recorded_from": "docker.io/louislam/uptime-kuma@sha256:917318f9d7be5257f43ba412c766a473be336eb451d70744f3b482d0c3997c0e",
+  "note": "A fresh instance, before the database is set up. The one path that answers with Uptime Kuma's own state rather than with the single-page app.",
+  "request": {
+    "method": "GET",
+    "path": "/api/entry-page"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "json": {
+      "type": "setup-database"
+    }
+  }
+}
