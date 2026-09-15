@@ -1,9 +1,9 @@
 {
   "recorded_from": "docker.io/louislam/uptime-kuma@sha256:917318f9d7be5257f43ba412c766a473be336eb451d70744f3b482d0c3997c0e",
-  "note": "A path this service does not implement. It answers 200 with the single-page app, which is why a proof about this service must assert a body and never a status.",
+  "note": "A path this service implements in neither state — before its database exists and after. It answers 200 with the single-page app, which is why a proof about this service must assert a body and never a status. Recorded from a set-up instance; a fresh one answers identically, which is the property that makes this path the right one to record and /api/push/<token> the wrong one.",
   "request": {
     "method": "GET",
-    "path": "/api/push/a-token-that-does-not-exist"
+    "path": "/api/not-a-real-path"
   },
   "response": {
     "status": 200,

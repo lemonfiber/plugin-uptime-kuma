@@ -93,19 +93,48 @@ the model was changed — [spec#386](https://github.com/lemonfiber/spec/pull/386
 standard: five of the twenty bundled services keep their configuration elsewhere
 and the stack's `compose/` says so for each.
 
-## What it can do, and why that currently wires nothing
+## What it can do, and why it stays namespaced
 
 `provides` is the capability model's plugin side (`F4-R1`). Both claims are
-namespaced with the plugin's id, because a plugin may not invent a core-looking
-name (`F4-R4`) — and a namespaced capability is inert until something asks for
-it. Nothing asks: the core vocabulary is `F4-R2`'s and is not published.
+namespaced with the plugin's id (`F4-R4`), and a namespaced capability is inert
+until something asks for it.
 
-Unlike Komga's, these two are likely to **stay** namespaced. `F9-R3` keeps a
-capability nothing bundled implements out of the core set, and nothing bundled
-watches endpoints. That is the right answer rather than a gap — an ecosystem
-vocabulary is what namespaces are for. `.github/interim/vocabulary_gate.py` still
-fires when a vocabulary is published, so the question gets asked rather than
-assumed.
+The core vocabulary is published now, and **neither of these is in it**. This
+README predicted that before it existed, and the prediction was right for the
+reason it gave: `F9-R3` keeps a capability nothing bundled implements out of the
+core set, and nothing bundled watches endpoints. So this is the right answer
+rather than a gap — an ecosystem vocabulary is exactly what namespaces are for,
+and Komga's `media.serve` and these two are the two halves of the same design
+working.
+
+What changed is that it is a fact rather than a guess.
+`.github/interim/vocabulary_gate.py` holds this manifest to the published set on
+every run, and goes red the day either name becomes a core one.
+
+## What it adds to what lemonfiber says
+
+Both capabilities being inert is precisely why this section exists. A plugin may
+put a row in a register lemonfiber already runs (`F3-R26`), and that is where
+this plugin is useful rather than merely readable: it tells lemonfiber two things
+about the stack that lemonfiber could not have known to say.
+
+| Check | What it notices | Remedy |
+| --- | --- | --- |
+| `uptime-kuma:set-up` | It is running, healthy, green — and nobody ever opened it, so it is watching nothing | Open it and add a monitor for each thing you would want to know had gone |
+| `uptime-kuma:api-still-answers-json` | The path the health probe asks for has stopped being an API path, so the probe has gone blind without going red | Treat the probe as unproven and pin the image back |
+
+The first is the failure this service actually has. It does not go down; it never
+starts doing the one thing it was installed for, and every surface reports it as
+fine. `/api/entry-page` is the one anonymous answer that tells the two apart.
+
+Both ask something no credential is needed for, and that is forced rather than
+chosen: everything else here is socket.io, so a check needing a credential would
+report `unrun` on every doctor run until recipes arrive — and a check that
+quietly never runs is worse than one that fails.
+
+No code is contributed and none can be (`F3-R6`). There is nothing for
+contributed code to *be*: the row is data and the engine that reads it is
+lemonfiber's, unchanged.
 
 ## The proofs, and why all three are about the body
 
@@ -113,20 +142,30 @@ This service answers **HTTP 200 to every path it does not implement**, serving
 its single-page app as the fallback. Measured:
 
 ```
-/api/entry-page              -> 200  {"type":"setup-database"}
-/api/push/abc123             -> 200  <!DOCTYPE html><html lang="en">…
-/api/status-page/nonexistent -> 200  <!DOCTYPE html><html lang="en">…
-/api/badge/1/status          -> 200  <!DOCTYPE html><html lang="en">…
+                                 before its database exists   afterwards
+/api/entry-page              ->  200 {"type":"setup-database"}  200 {"type":"entryPage"}
+/api/not-a-real-path         ->  200 <!DOCTYPE html>…           200 <!DOCTYPE html>…
+/api/push/abc123             ->  200 <!DOCTYPE html>…           404 {"ok":false,…}
+/api/status-page/nonexistent ->  200 <!DOCTYPE html>…           404 {"status":"fail",…}
+/api/badge/1/status          ->  200 <!DOCTYPE html>…           200 image/svg+xml
 ```
 
 A proof that read a status here would pass against a build with no API at all —
 and against a container that had been emptied, once Docker's port proxy is in
 front of it.
 
+**The right column is new, and it corrected a proof.** The unimplemented-path
+proof used to ask `/api/push/<token>`, which answers the app shell only while
+this service has no database; once it has one, that path is a real endpoint
+answering a real 404. The proof passed against its recording and failed against a
+running instance — a fixture is evidence about a moment, and that moment was a
+fresh container. `/api/not-a-real-path` answers identically in both states, which
+is what makes it the path worth recording.
+
 | Proof | What it establishes |
 | --- | --- |
 | `uptime-kuma.serves` | `/api/entry-page` answers with JSON about *this* instance, which is the only path that does |
-| `uptime-kuma.status-is-not-an-answer` | An unimplemented path answers 200 with HTML — the property that makes the first proof's shape necessary |
+| `uptime-kuma.status-is-not-an-answer` | A path this service implements in **neither** state answers 200 with HTML — the property that makes the first proof's shape necessary |
 | `uptime-kuma.state-outlives-its-container` | Set up, destroyed and recreated, it is still set up. The proof that `config_path` is doing its job |
 
 The third is the one that would have caught this plugin being broken, and it is
@@ -139,11 +178,14 @@ Proved by running, on `docker.io/louislam/uptime-kuma@sha256:917318f9…`:
 
 - the image starts as a non-root user against the declared `config_path` and
   answers;
-- all three proofs pass against the live container;
+- all three proofs and both contributed checks pass against the live container;
 - the first two report **unproven** — not failed, not passed — against the same
   published port with the process replaced by `sleep infinity`;
 - the state genuinely survives `docker rm -f` and a new container on the same
   mount, and genuinely does not survive it under the old `/config` shape;
+- the unimplemented-path proof, re-run against an instance whose database had
+  been created, **failed** — and that is how the path it asks about came to be
+  changed to one this service implements in neither state;
 - the digest resolves, `2.5.4` still names it, and **no signature is offered**,
   recorded as unproven rather than verified.
 
@@ -166,6 +208,14 @@ entered in its own UI and lemonfiber captures none of them; this plugin changes 
 bundled setting. Both blocks exist in the format (`F3-R17`, `F3-R18`); a plugin
 that holds nothing declares nothing — and in this version nothing *could* capture
 one, because capture is a recipe and recipes arrive with `F8`.
+
+No `[[recipe]]`. Seeding this with a monitor for every service in the stack is
+the obvious next thing to want and it is exactly a recipe: ordered calls, a
+captured token, a declared pair for each. The block exists in the format and is
+checked, and a manifest declaring one asks for `recipe.run` by name — so a
+lemonfiber that cannot run one refuses the manifest rather than parsing the block
+and skipping it. Until that capability is offered, declaring one here would make
+this plugin uninstallable in exchange for nothing.
 
 No proxy hostname, because the tier refuses it. No dashboard widget, because a
 widget needs a credential.
