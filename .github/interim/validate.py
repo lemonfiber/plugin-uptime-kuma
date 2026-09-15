@@ -438,6 +438,7 @@ def validate_claim_probes(claim: dict, at: str, published: Published, report: Re
         validate_request(probe.get("request"), where, report)
         validate_expect(probe.get("expect"), where, report)
         validate_fixture(probe.get("fixture"), where, report)
+        validate_probe_asks_nothing_of_the_library(probe.get("expect"), where, report)
 
     capability = claim.get("capability")
     if not published.asked:
@@ -486,6 +487,38 @@ def validate_claim_probes(claim: dict, at: str, published: Published, report: Re
                 bool(set(expect) & set(wants_body)),
                 where,
                 f"constrains no body, and the probe requires one of: {', '.join(sorted(wants_body))}",
+            )
+
+
+def validate_probe_asks_nothing_of_the_library(expect: object, where: str, report: Report) -> None:
+    """A probe gates an install, so it asks what the service does (F4-R25, ARCH-R119).
+
+    A count above zero is the only way an expectation can say something about how
+    much the operator has; everything else it can say is about shape. So that is
+    where the rule is enforceable, and it is the mistake both plugins written
+    against this vocabulary made within an hour of it being published — *at least
+    one series* reads as the stronger proof and is a plugin nobody can install
+    until they have copied their library over.
+
+    A contributed check is deliberately not held to this. It reports on a running
+    stack rather than gating an install, so one that fails on a fresh machine is
+    a check doing its job.
+    """
+    if not isinstance(expect, dict):
+        return
+    least = expect.get("json_array_min")
+    if isinstance(least, int) and least > 0:
+        report.fail(
+            f"{where}.expect.json_array_min",
+            f"{least!r} asserts the operator has put something there, and a probe gates an "
+            "install — `0` says the answer reads as a list without saying how long it is",
+        )
+    for key, minimum in (expect.get("json_at_least") or {}).items():
+        if isinstance(minimum, (int, float)) and minimum > 0:
+            report.fail(
+                f"{where}.expect.json_at_least",
+                f"{key} at least {minimum!r} asserts the operator has put something there, and "
+                "a probe gates an install; a check may say this and a probe may not",
             )
 
 
@@ -1213,6 +1246,12 @@ def self_test() -> int:
         ("a binding with a status the probe does not permit",
          lambda m: m["claim"][0]["probe"][0]["expect"].__setitem__("status", 200),
          "and the probe permits"),
+        ("a probe asserting the operator has put something there",
+         lambda m: m["claim"][0]["probe"][1]["expect"].__setitem__("json_array_min", 1),
+         "asserts the operator has put something there"),
+        ("a probe asserting a count of something the operator holds",
+         lambda m: m["claim"][0]["probe"][1]["expect"].__setitem__("json_at_least", {"total": 1}),
+         "asserts the operator has put something there"),
         ("a binding constraining no body where the probe requires one",
          lambda m: m["claim"][0]["probe"][1].__setitem__("expect", {"status": 200}),
          "constrains no body"),
