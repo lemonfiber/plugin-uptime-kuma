@@ -165,6 +165,20 @@ class Published:
     def point_names(self) -> list[str]:
         return [entry.get("name", "") for entry in (self.points or {}).get("points", [])]
 
+    def occupied(self) -> dict[str, str]:
+        """Every identity a bundled row holds, and which point holds it.
+
+        Across all points rather than per point, because a remedy names a check:
+        a `for` pointing at a bundled check is a collision with `doctor.check`'s
+        register while sitting in a `doctor.remedy` row, and looking only at its
+        own point's occupied set would miss exactly that.
+        """
+        return {
+            identity: entry.get("name", "")
+            for entry in (self.points or {}).get("points", [])
+            for identity in entry.get("occupied", [])
+        }
+
 
 def read_published(directory: str | None) -> Published:
     if directory is None:
@@ -659,13 +673,14 @@ def validate_contribution_row(entry: dict, at: str, point: str, published: Publi
         )
         return
 
-    occupied = published_point.get("occupied", [])
+    occupied = published.occupied()
     for field in ("id", "for"):
         value = entry.get(field)
-        if isinstance(value, str) and value in occupied:
+        held = occupied.get(value) if isinstance(value, str) else None
+        if held is not None:
             report.fail(
                 f"{at}.{field}",
-                f"{value!r} is the identity a bundled row already holds at {point!r}; adding is "
+                f"{value!r} is the identity a bundled row already holds at {held!r}; adding is "
                 "not overriding, and standing in for something bundled is not a manifest's to assert",
             )
 
@@ -1187,8 +1202,11 @@ def self_test() -> int:
         ("a contributed check with no remedy",
          lambda m: m["contribution"].pop(), "carries no remedy"),
         ("a remedy for a check this manifest did not declare",
-         lambda m: m["contribution"][1].__setitem__("for", "storage.hardlinks"),
+         lambda m: m["contribution"][1].__setitem__("for", "vibes.check"),
          "names no check this manifest declares"),
+        ("a remedy attached to a bundled check",
+         lambda m: m["contribution"][1].__setitem__("for", "storage.space"),
+         "the identity a bundled row already holds"),
         ("a recipe on a manifest that never asked to run one",
          lambda m: m.__setitem__("recipe", [{
              "id": "seed", "title": "Seed it", "why": "Because",
