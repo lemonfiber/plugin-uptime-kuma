@@ -1311,7 +1311,12 @@ def main() -> int:
 
     published = read_published(args.published)
     if args.published is not None and not published.asked:
-        print(f"::error::{args.published} carries neither {VOCABULARY} nor {EXTENSION_POINTS}")
+        missing = [
+            name for name, found in ((VOCABULARY, published.vocabulary),
+                                     (EXTENSION_POINTS, published.points))
+            if found is None
+        ]
+        print(f"::error::{args.published} does not carry {' or '.join(missing)}")
         return 1
 
     validate(manifest, report, published)
