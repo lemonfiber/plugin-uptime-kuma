@@ -7,9 +7,10 @@
 # catalogue runs, or the first time a plugin meets them is in somebody else's
 # pull request.
 #
-# The commands are not the ones it will run. `lemonfiber plugin validate` and
-# `lemonfiber plugin prove` arrive with `0.16.0`, which is planned; `targets.toml`
-# names that release and `.github/interim/` stands in until it exists. The
+# The commands are not the ones it will run. lemonfiber validating a manifest
+# itself is `F10-R3` and nothing ships it yet; what `0.16.0` publishes is the
+# schema and the vocabulary a manifest is held to, `targets.toml` names that
+# release, and `.github/interim/` stands in until the reader arrives. The
 # `schema` job below is what ends the arrangement: it fails the day a lemonfiber
 # release publishes the schema, rather than letting the stand-in quietly outlive
 # it.
