@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Run what this plugin declares — until `lemonfiber plugin prove` exists.
+"""Run what this plugin declares — until lemonfiber runs it.
 
 **This is CI harness, not plugin content.** A plugin is `plugin.toml` and the
 recordings in `fixtures/`. Nothing under `.github/` is installed, and lemonfiber
 never runs any of it (`F3-R6`).
 
 `F3-R3` says a plugin's declared proofs run in the existing verification engine,
-the same way the bundled ones do. That engine is in lemonfiber, and the verbs
-that reach it are owed by `0.16.0`, which is `planned`. This stands in, and is
-written to be thrown away: when `lemonfiber plugin prove .` exists, `plugin.yml`
-calls it and this file goes.
+the same way the bundled ones do, and `F10-R3` says proving works against a local
+path with no catalogue and no network. That engine is in lemonfiber and nothing
+reaches it from outside yet. This stands in, and is written to be thrown away:
+the day lemonfiber proves a manifest on a path, `plugin.yml` calls it and this
+file goes.
 
 Three kinds of assertion, run the same way and reported apart, because they are
 answerable at different moments and by different things:
