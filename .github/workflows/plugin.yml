@@ -66,7 +66,22 @@ jobs:
       - name: The image this plugin installs
         run: python3 .github/interim/image_gate.py
 
-  # And the register that points the other way.
+  # Two registers, both pointing the other way: they fail when the thing they
+  # stand in for arrives, so a stand-in cannot quietly outlive it.
+  vocabulary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Has the core capability vocabulary arrived
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/interim/vocabulary_gate.py
+
   schema:
     runs-on: ubuntu-latest
     steps:

@@ -14,18 +14,20 @@ reviewed catalogue — that is `lemonfiber-plugins` — and it is not a fork of 
 stack. Contract:
 [plugin-manifest](https://github.com/lemonfiber/spec/blob/main/20-architecture/contracts/plugin-manifest.md).
 
-## Read the defect before changing anything
+## `config_path` is load-bearing here
 
-This image keeps its state at `/app/data`, and the container lemonfiber
-generates for a plugin mounts its configuration directory at `/config` with no
-field by which a manifest can say otherwise. The service therefore installs and
-works and forgets everything when its container is replaced. `README.md` records
-it in full.
+This image has no `/config`; it keeps its database at `/app/data`. Under the
+plugin format as it originally stood there was no field to say so, and this
+plugin was broken two ways — losing every monitor on recreate when run as the
+image's own user, and failing to start at all when run as a non-root one.
 
-**Do not work around it.** There is no field to set an environment variable and
-no field to name a mount target, and inventing one would make this manifest
-refused rather than better. The fix belongs in the contract, and until it lands
-this repository's job is to state the problem accurately.
+That was reported as a defect in the model and the model was changed
+(`F3-R32`, `ARCH-R100`). `config_path = "/app/data"` is the fix, and
+`uptime-kuma.state-outlives-its-container` is the proof that keeps it honest.
+
+**Do not remove or "simplify" that line**, and do not reach for an environment
+variable instead — there is no field for one, deliberately (`ARCH-R101`), and a
+manifest carrying one is refused.
 
 ## The rules you cannot break
 
@@ -33,6 +35,11 @@ this repository's job is to state the problem accurately.
   contributed code is never run, under any opt-in (`F3-R6`). The Python under
   `.github/interim/` is CI harness, is not part of what an operator installs,
   and is deleted when lemonfiber's own verbs replace it.
+- **The plugin is `plugin.toml` and `fixtures/`.** Proofs live in the manifest,
+  not beside it: an installer reads one file, and a proof the installer never
+  reads cannot be what `F3-R4` refuses an install over.
+- **This service is `loopback`, so it gets no proxy hostname.** `[wiring]` names
+  none and there is no field by which it could ask. The tier decides.
 - **The image is named by digest** (`F3-R8`). Moving the pin means re-recording
   every fixture against the new image in the same change.
 - **A proof asserts a body, never only a status.** It matters more here than
@@ -51,10 +58,11 @@ this repository's job is to state the problem accurately.
 ```
 python3 .github/interim/validate.py --self-test   # the gate refuses what it should
 python3 .github/interim/validate.py              # the manifest against the contract
-python3 .github/interim/prove.py                  # proofs against the recordings
+python3 .github/interim/prove.py                  # the manifest's proofs, against the recordings
 python3 .github/interim/prove.py --against http://127.0.0.1:3001   # against a live one
 python3 .github/interim/image_gate.py             # the digest, its tag, its signature state
 python3 .github/interim/schema_gate.py            # fails the day the real schema lands
+python3 .github/interim/vocabulary_gate.py        # fails the day the capability vocabulary lands
 ```
 
 ## Before you open a PR

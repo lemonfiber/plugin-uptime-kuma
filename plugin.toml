@@ -11,7 +11,7 @@ schema_version = 1
 [plugin]
 id          = "uptime-kuma"
 name        = "Uptime Kuma"
-version     = "1.0.0"
+version     = "1.1.0"
 description = "Watches the things the stack depends on and tells you which one went, rather than that something did"
 without_it  = "You find out an indexer, a tracker or the connection itself is down from whatever stopped working because of it"
 upstream    = "https://github.com/louislam/uptime-kuma"
@@ -19,32 +19,124 @@ license     = "MIT"
 forms       = ["full"]
 
 # One form, and the widest one. What this watches is the whole stack and the
-# things outside it that the whole stack needs; an operator running `search`
-# alone has nothing for it to do that a glance would not answer faster.
+# things outside it the whole stack needs; an operator running `search` alone has
+# nothing for it to do that a glance would not answer faster.
 
 [[service]]
 id     = "uptime-kuma"
 name   = "Uptime Kuma"
 image  = "docker.io/louislam/uptime-kuma"
-# What actually runs (F3-R8, ARCH-R95). `tag` is the readable name for this
-# digest and is never resolved.
 digest = "sha256:917318f9d7be5257f43ba412c766a473be336eb451d70744f3b482d0c3997c0e"
 tag    = "2.5.4"
 port   = 3001
 # Admin, not household. It holds the credentials for every notification channel
-# it sends on, and it can be pointed at any address the machine can reach — both
-# of which put it in the tier the *arrs are in rather than the one the library
-# server is in.
+# it sends on, and it can be pointed at any address this machine can reach. That
+# is the tier the *arrs are in, and it is also why `[wiring]` below names no
+# hostname: a loopback service does not get one, and there is no field by which
+# it could ask (ARCH-R104).
 bind   = "loopback"
-# The path matters more here than in most: this service answers 200 with its
-# single-page app for every path it does not implement, so a probe on `/` would
-# pass against a build with no API at all. `/api/entry-page` is the one that
-# answers with its own state. `proofs.toml` pins that property so it cannot
-# change under this line without something going red.
+# This service answers 200 with its single-page app for every path it does not
+# implement, so a probe on `/` would pass against a build with no API at all.
+# `/api/entry-page` is the one that answers with its own state. The second proof
+# below pins that property so this line cannot quietly go blind.
 health = { kind = "http", path = "/api/entry-page", timeout_s = 90 }
 criticality = "enhancing"
-# It watches endpoints. It reads no library, and the data root is not mounted.
+
+# It watches endpoints. It reads no library, so the data root is not mounted and
+# it declares no media type.
 takes_data  = false
+
+# The line this plugin exists to demonstrate.
+#
+# This image has no /config. It keeps its database, its uploads and its
+# notification configuration at /app/data, and before `config_path` existed the
+# generated container mounted a directory the application never reads. Running
+# as the image's own user that installed cleanly, answered its health probe, and
+# lost every monitor the moment the container was replaced; running as a
+# non-root user it did not start at all, because /app/data in the image is not
+# writable by anybody else.
+#
+# One directory, one mount, the source still lemonfiber's. Only the target is
+# named here. See spec#386 and README.md for the run that showed both halves.
+config_path = "/app/data"
+
+# What it can do (F4-R1), namespaced with the plugin's id because the core
+# vocabulary F4-R2 owes is not published yet and a plugin may not invent a
+# core-looking name (F4-R4). Nothing bundled watches endpoints, so even once that
+# vocabulary exists these two are unlikely to become core names: F9-R3 keeps a
+# capability nothing bundled implements out of it. That is the right answer and
+# not a gap — an ecosystem vocabulary is what namespaces are for.
+provides = [
+    "uptime-kuma:endpoint-monitor",
+    "uptime-kuma:status-page",
+]
+
+[wiring]
+# No `hostname`. The tier decided that, not this plugin.
+dashboard_group = "Automation"
 
 [requires]
 capabilities = ["service.add", "service.health.http"]
+
+# ─── Proofs ──────────────────────────────────────────────────────────────────
+#
+# Both assert a body, and here that is not a stylistic preference. Measured:
+#
+#   /api/entry-page              -> 200  {"type":"setup-database"}
+#   /api/push/abc123             -> 200  <!DOCTYPE html><html lang="en">…
+#   /api/status-page/nonexistent -> 200  <!DOCTYPE html><html lang="en">…
+#   /api/badge/1/status          -> 200  <!DOCTYPE html><html lang="en">…
+#
+# A proof reading a status here would pass against a build with no API at all.
+
+[[proof]]
+id      = "uptime-kuma.serves"
+title   = "Uptime Kuma answers with its own state on the declared health path"
+fixture = "fixtures/api-entry-page.json"
+why     = """
+`/api/entry-page` is the endpoint the health probe asks for, and the only one
+that answers an anonymous caller with JSON about this instance rather than with
+the app shell. `type` says which front door is in force: `setup-database` before
+anybody has set it up, `entryPage` afterwards.
+
+Both are a service that is answering, which is what the probe is for — so this
+asserts the field is present and is a string, not which value it holds.
+"""
+request = { method = "GET", path = "/api/entry-page" }
+expect  = { status = 200, content_type = "application/json", json_has_keys = ["type"], json_types = { type = "str" } }
+
+[[proof]]
+id      = "uptime-kuma.status-is-not-an-answer"
+title   = "An unimplemented path answers 200, so a status proves nothing here"
+fixture = "fixtures/api-unimplemented-path.json"
+why     = """
+Asked for a push endpoint with a token that does not exist, this service returns
+200 and its single-page app. That is not a defect — it is how a client-routed
+application serves deep links — but it means the usual shorthand for "is it up"
+is worthless against this image.
+
+Recording it makes the reason the health path is `/api/entry-page` reviewable
+rather than folklore, and turns a future change in this behaviour into a red
+proof rather than a probe that has quietly gone blind.
+"""
+request = { method = "GET", path = "/api/push/a-token-that-does-not-exist" }
+expect  = { status = 200, content_type = "text/html", json_is_absent = true, body_starts_with = "<!DOCTYPE html>" }
+
+[[proof]]
+id      = "uptime-kuma.state-outlives-its-container"
+title   = "Set up, destroyed and recreated, it is still set up"
+fixture = "fixtures/api-entry-page-after-recreate.json"
+why     = """
+The proof that `config_path` is doing its job, and the one that would have caught
+this plugin being broken.
+
+`/api/entry-page` reports `setup-database` until the database exists and
+`entryPage` afterwards, which makes it a readable answer to "is there durable
+state here". The recording is taken from a container that was set up, removed
+entirely, and created again on the same mount. Against the old generated shape —
+the configuration directory at `/config` — the same sequence answers
+`setup-database`, because the database was in the container's writable layer and
+went with it.
+"""
+request = { method = "GET", path = "/api/entry-page" }
+expect  = { status = 200, content_type = "application/json", json = { type = "entryPage" } }

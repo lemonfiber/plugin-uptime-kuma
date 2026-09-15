@@ -38,7 +38,21 @@ SUPPORTED_SCHEMA_VERSIONS = {1}
 
 PLUGIN_REQUIRED = ("id", "name", "version", "description", "without_it", "upstream", "license", "forms")
 SERVICE_REQUIRED = ("id", "name", "image", "digest", "tag", "criticality")
-SERVICE_OPTIONAL = ("port", "bind", "health", "media_types", "takes_data")
+SERVICE_OPTIONAL = (
+    "port", "bind", "health", "media_types", "takes_data", "provides", "config_path",
+)
+WIRING_PERMITTED = ("hostname", "dashboard_group")
+PROOF_REQUIRED = ("id", "title", "request", "expect", "why")
+PROOF_OPTIONAL = ("fixture",)
+# What an `expect` may constrain. Anything else is a proof this runner would
+# silently not check, which is worse than one that fails.
+EXPECT_PERMITTED = (
+    "status", "json", "json_has_keys", "json_types", "json_is_absent",
+    "content_type", "body_starts_with",
+)
+# An expectation that says something about the body rather than the network path.
+# At least one proof must carry one (ARCH-R105).
+BODY_CONSTRAINTS = frozenset(EXPECT_PERMITTED) - {"status"}
 
 # `stack.toml`'s vocabulary minus the one value a plugin may not assign itself
 # (`ARCH-R97`). Named in full so a refusal can list what was available.
@@ -47,7 +61,13 @@ FORBIDDEN_CRITICALITY = "critical"
 
 BINDS = ("loopback", "lan")
 HEALTH_KINDS = ("http", "tcp", "container")
-MEDIA_TYPES = ("tv", "movies", "music", "books")
+MEDIA_TYPES = ("tv", "movies", "music", "books", "comics")
+
+# The bundled dashboard's groups, which is what a plugin's entry joins.
+DASHBOARD_GROUPS = ("Watch", "Library", "Automation", "Acquisition")
+
+# A single DNS label: what may go in front of the operator's own domain.
+DNS_LABEL = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 
 # The forms `lemonfiber-media-stack` declares. Read from the stack rather than
 # listed here would be better and is what lemonfiber will do; this file has no
@@ -59,7 +79,9 @@ STACK_FORMS = (
 
 # The fields `stack.toml` has that a plugin's service may not (`ARCH-R84`), each
 # refused by name rather than ignored.
-FORBIDDEN_SERVICE_FIELDS = ("grants", "depends_on", "host_managed", "profile", "api", "last_release")
+FORBIDDEN_SERVICE_FIELDS = (
+    "grants", "depends_on", "host_managed", "profile", "api", "last_release", "environment",
+)
 
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 SEMVER = re.compile(r"^\d+\.\d+\.\d+(?:[-+].*)?$")
@@ -134,6 +156,148 @@ def validate_health(health: dict, report: Report) -> None:
         )
 
 
+def validate_config_path(service: dict, report: Report) -> None:
+    """Where the one configuration directory lands inside the container (ARCH-R100).
+
+    The mount set is lemonfiber's and unchanged. What is checked here is that the
+    target names one place, is a place, and is not the library — a path beneath
+    the data root would be a second mount over somebody's media wearing a
+    different name.
+    """
+    where = "[[service]].config_path"
+    declared = service.get("config_path")
+    if declared is None:
+        return
+    if not report.check(isinstance(declared, str) and declared, where, "must be a non-empty string"):
+        return
+    report.check(declared.startswith("/"), where, f"{declared!r} is not an absolute path")
+    report.check(declared != "/", where, "the container root is not a configuration directory")
+    report.check(".." not in declared.split("/"), where, f"{declared!r} walks out of itself")
+    report.check("$" not in declared, where, f"{declared!r} interpolates; the path is data, not a template")
+    report.check(
+        declared != "/data" and not declared.startswith("/data/"),
+        where,
+        f"{declared!r} is inside the data root, which would be a second mount over the library",
+    )
+
+
+def validate_provides(service: dict, report: Report) -> None:
+    """Capabilities claimed (F4-R1, ARCH-R102).
+
+    A core name comes from the published vocabulary. There is not one yet — F4-R2
+    owes it — so the only claim this can accept today is one namespaced with the
+    plugin's own id, which is exactly what F4-R4 requires of a plugin's own.
+    `vocabulary_gate.py` is what says so when that changes.
+    """
+    where = "[[service]].provides"
+    claims = service.get("provides")
+    if claims is None:
+        return
+    if not report.check(isinstance(claims, list), where, "must be an array of capability names"):
+        return
+    prefix = f"{service.get('id', '')}:"
+    for claim in claims:
+        if not report.check(isinstance(claim, str) and claim, where, f"{claim!r} is not a capability name"):
+            continue
+        if claim.startswith(prefix):
+            continue
+        report.fail(
+            where,
+            f"{claim!r} is neither namespaced with this plugin's id ({prefix}…) nor a name in the "
+            "published core vocabulary — of which there is none yet, so a namespaced name is the "
+            "only claim a plugin can make today",
+        )
+
+
+def validate_wiring(wiring: dict, service: dict, report: Report) -> None:
+    """How the stack's own proxy and dashboard reach it (F3-R31, ARCH-R103, ARCH-R104)."""
+    where = "[wiring]"
+    for field in sorted(set(wiring) - set(WIRING_PERMITTED)):
+        report.fail(
+            f"{where}.{field}",
+            f"{field!r} is outside the permitted set; permitted: {', '.join(WIRING_PERMITTED)}. "
+            "A plugin declares which label and which group, never a stanza or an entry.",
+        )
+
+    hostname = wiring.get("hostname")
+    if hostname is not None:
+        report.check(
+            isinstance(hostname, str) and DNS_LABEL.match(hostname) is not None,
+            f"{where}.hostname",
+            f"{hostname!r} is not a single DNS label; it goes in front of the operator's own "
+            "domain and may not be a name, an address or a port",
+        )
+        report.check(
+            service.get("bind") == "lan",
+            f"{where}.hostname",
+            f"this service binds {service.get('bind')!r}, and only a lan service is proxied — "
+            "the tier decides whether it is reachable by name, not the plugin",
+        )
+
+    group = wiring.get("dashboard_group")
+    if group is not None:
+        report.check(
+            group in DASHBOARD_GROUPS,
+            f"{where}.dashboard_group",
+            f"{group!r} is not one of {', '.join(DASHBOARD_GROUPS)}",
+        )
+
+
+def validate_proofs(proofs: list, report: Report) -> None:
+    """What must hold before it is installed (F3-R1, ARCH-R105)."""
+    if not report.check(isinstance(proofs, list) and proofs, "[[proof]]", "a plugin declares at least one proof"):
+        return
+
+    seen: set[str] = set()
+    constrains_a_body = False
+
+    for index, proof in enumerate(proofs):
+        name = proof.get("id") or f"#{index + 1}"
+        where = f"[[proof]] {name}"
+        for field in PROOF_REQUIRED:
+            report.check(field in proof, where, f"missing required field {field!r}")
+        for field in sorted(set(proof) - set(PROOF_REQUIRED) - set(PROOF_OPTIONAL)):
+            report.fail(f"{where}.{field}", f"{field!r} is outside the permitted set")
+
+        if isinstance(proof.get("id"), str):
+            report.check(proof["id"] not in seen, where, f"{proof['id']!r} is declared twice")
+            seen.add(proof["id"])
+
+        request = proof.get("request")
+        if isinstance(request, dict):
+            report.check("method" in request and "path" in request, f"{where}.request",
+                         "names the method and the path it asks for")
+            report.check(
+                str(request.get("path", "")).startswith("/"),
+                f"{where}.request.path",
+                f"{request.get('path')!r} is not a path on the service",
+            )
+
+        expect = proof.get("expect")
+        if isinstance(expect, dict):
+            report.check(bool(expect), f"{where}.expect", "declares nothing, so nothing can be decided")
+            for field in sorted(set(expect) - set(EXPECT_PERMITTED)):
+                report.fail(
+                    f"{where}.expect.{field}",
+                    f"{field!r} is not something this can check; permitted: "
+                    f"{', '.join(EXPECT_PERMITTED)}",
+                )
+            if set(expect) & BODY_CONSTRAINTS:
+                constrains_a_body = True
+
+        if isinstance(proof.get("why"), str):
+            report.check(proof["why"].strip() != "", f"{where}.why",
+                         "says nothing; a proof nobody can justify is one nobody will maintain")
+
+    report.check(
+        constrains_a_body,
+        "[[proof]]",
+        "every proof constrains only a response status. Docker publishes a port by putting a "
+        "proxy in front of it, and that proxy accepts before knowing whether anything inside is "
+        "listening — so none of these would fail against a container that had been emptied",
+    )
+
+
 def validate_service(service: dict, report: Report) -> None:
     where = "[[service]]"
     for field in SERVICE_REQUIRED:
@@ -201,6 +365,9 @@ def validate_service(service: dict, report: Report) -> None:
             f"{media_type!r} is not one of {', '.join(MEDIA_TYPES)}",
         )
 
+    validate_config_path(service, report)
+    validate_provides(service, report)
+
     health = service.get("health")
     if health is not None:
         validate_health(health, report)
@@ -214,7 +381,9 @@ def validate(manifest: dict, report: Report) -> None:
         f"schema_version {version!r} is not one of {sorted(SUPPORTED_SCHEMA_VERSIONS)}",
     )
 
-    for field in sorted(set(manifest) - {"schema_version", "plugin", "service", "requires"}):
+    for field in sorted(
+        set(manifest) - {"schema_version", "plugin", "service", "requires", "wiring", "proof", "secret", "override"}
+    ):
         report.fail(f"{MANIFEST}.{field}", f"{field!r} is not a top-level table this contract defines")
 
     plugin = manifest.get("plugin")
@@ -227,6 +396,18 @@ def validate(manifest: dict, report: Report) -> None:
                      f"{len(services)} services declared; this schema version permits exactly one")
         for service in services:
             validate_service(service, report)
+
+    wiring = manifest.get("wiring")
+    if wiring is not None:
+        first = services[0] if isinstance(services, list) and services else {}
+        if report.check(isinstance(wiring, dict), "[wiring]", "must be a table"):
+            validate_wiring(wiring, first, report)
+
+    proofs = manifest.get("proof")
+    if proofs is None:
+        report.fail("[[proof]]", "no proof is declared, and a plugin whose proofs do not pass is not installed")
+    else:
+        validate_proofs(proofs, report)
 
     requires = manifest.get("requires")
     if requires is not None:
@@ -248,11 +429,17 @@ def validate(manifest: dict, report: Report) -> None:
 # Each case is a manifest broken one way, and the words its refusal must carry.
 # A gate nobody has seen fail is a gate nobody knows the shape of.
 BROKEN = (
-    ("an image named by tag alone", 'digest', None, "missing required field 'digest'"),
-    ("a digest that is not one", 'digest', "sha256:nope", "well-formed sha256 digest"),
-    ("a criticality a plugin may not assign itself", 'criticality', "critical", "may not declare"),
-    ("a kernel capability", 'grants', ["NET_ADMIN"], "a plugin may not declare"),
-    ("a port with no tier", 'bind', None, "needs the tier"),
+    ("an image named by tag alone", "digest", None, "missing required field 'digest'"),
+    ("a digest that is not one", "digest", "sha256:nope", "well-formed sha256 digest"),
+    ("a criticality a plugin may not assign itself", "criticality", "critical", "may not declare"),
+    ("a kernel capability", "grants", ["NET_ADMIN"], "a plugin may not declare"),
+    ("an environment variable", "environment", {"ND_X": "1"}, "a plugin may not declare"),
+    ("a port with no tier", "bind", None, "needs the tier"),
+    ("a configuration directory inside the library", "config_path", "/data/komga", "inside the data root"),
+    ("a configuration directory that is the container root", "config_path", "/", "not a configuration directory"),
+    ("a relative configuration directory", "config_path", "config", "not an absolute path"),
+    ("a media type outside the vocabulary", "media_types", ["manga"], "is not one of"),
+    ("a capability in the core namespace", "provides", ["media.serve"], "neither namespaced"),
 )
 
 
@@ -275,6 +462,41 @@ def self_test() -> int:
             broken["service"][0].pop(field, None)
         else:
             broken["service"][0][field] = value
+        report = Report()
+        validate(broken, report)
+        said = " ".join(report.faults)
+        if expected not in said:
+            print(f"::error::self-test: {label} was not refused by name — said: {said or '(nothing)'}")
+            return 1
+        print(f"  ok   {label} refused")
+
+    # The blocks that are not the service, each broken its own way.
+    shaped = (
+        ("a hostname for a loopback service", lambda m: (
+            m["service"][0].__setitem__("bind", "loopback"),
+            m["wiring"].__setitem__("hostname", "admin"),
+        ), "only a lan service is proxied"),
+        ("a hostname that is not a label", lambda m: m["wiring"].__setitem__("hostname", "http://x:80"),
+         "not a single DNS label"),
+        ("a dashboard group the dashboard has not got", lambda m: m["wiring"].__setitem__("dashboard_group", "Misc"),
+         "is not one of"),
+        ("a proxy stanza supplied by the plugin", lambda m: m["wiring"].__setitem__("reverse_proxy", "komga:25600"),
+         "outside the permitted set"),
+        ("a plugin declaring no proofs at all", lambda m: m.pop("proof"),
+         "a plugin whose proofs do not pass is not installed"),
+        ("a proof with nothing to decide", lambda m: m["proof"][0].__setitem__("expect", {}),
+         "declares nothing"),
+        ("a proof asserting something unknown", lambda m: m["proof"][0]["expect"].__setitem__("vibes", "good"),
+         "not something this can check"),
+        ("two proofs sharing an id", lambda m: m["proof"][1].__setitem__("id", m["proof"][0]["id"]),
+         "declared twice"),
+        ("proofs that only ever read a status", lambda m: [
+            p.__setitem__("expect", {"status": 200}) for p in m["proof"]
+        ], "constrains only a response status"),
+    )
+    for label, break_it, expected in shaped:
+        broken = tomllib.loads((ROOT / MANIFEST).read_text(encoding="utf-8"))
+        break_it(broken)
         report = Report()
         validate(broken, report)
         said = " ".join(report.faults)
