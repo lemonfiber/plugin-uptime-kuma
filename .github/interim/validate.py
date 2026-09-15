@@ -180,19 +180,38 @@ class Published:
         }
 
 
+def shaped(document: object, holding: str) -> dict | None:
+    """The artefact, if it is the shape this reads, and nothing if it is not.
+
+    This file reads two documents it does not own and cannot describe — which is
+    the whole point of them being published. A shape it does not recognise has to
+    become a refusal that names the artefact, because the alternative is a stack
+    trace, and a stack trace in a gate is a gate nobody can tell apart from a
+    broken manifest.
+    """
+    if not isinstance(document, dict):
+        return None
+    entries = document.get(holding)
+    if not isinstance(entries, list) or not all(isinstance(one, dict) for one in entries):
+        return None
+    return document
+
+
 def read_published(directory: str | None) -> Published:
     if directory is None:
         return Published(None, None)
     where = pathlib.Path(directory)
-    def read(name: str) -> dict | None:
+
+    def read(name: str, holding: str) -> dict | None:
         path = where / name
         if not path.is_file():
             return None
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            return shaped(json.loads(path.read_text(encoding="utf-8")), holding)
         except ValueError:
             return None
-    return Published(read(VOCABULARY), read(EXTENSION_POINTS))
+
+    return Published(read(VOCABULARY, "capabilities"), read(EXTENSION_POINTS, "points"))
 
 
 class Report:
@@ -695,6 +714,9 @@ def validate_contribution_row(entry: dict, at: str, point: str, published: Publi
             )
 
     row = published_point.get("row", {})
+    if not isinstance(row, dict):
+        report.fail(f"{at}.at", f"{point!r} publishes no row shape this can read")
+        return
     required = row.get("required", [])
     optional = row.get("optional", [])
     for field in required:
@@ -705,14 +727,23 @@ def validate_contribution_row(entry: dict, at: str, point: str, published: Publi
             f"{field!r} is outside what {point!r} declares; it takes: "
             f"{', '.join(sorted(set(required) | set(optional)))}",
         )
-    for field, values in row.get("enums", {}).items():
+    enums = row.get("enums", {})
+    bounds_by_field = row.get("bounds", {})
+    if not isinstance(enums, dict) or not isinstance(bounds_by_field, dict):
+        report.fail(
+            f"{at}.at",
+            f"{point!r} publishes its closed sets or its bounds in a shape this cannot read; "
+            "each is a table keyed by the field it constrains",
+        )
+        return
+    for field, values in enums.items():
         if field in entry:
             report.check(
                 entry[field] in values,
                 f"{at}.{field}",
                 f"{entry[field]!r} is not one of {', '.join(values)}",
             )
-    for field, bounds in row.get("bounds", {}).items():
+    for field, bounds in bounds_by_field.items():
         if field not in entry:
             continue
         value = entry[field]
@@ -1258,6 +1289,22 @@ def self_test() -> int:
         break_it(broken)
         if not refuses(label, broken, expected, published):
             return 1
+
+    # An artefact in a shape this cannot read is a refusal naming the artefact,
+    # never a stack trace: a gate that crashes is one nobody can tell apart from a
+    # manifest that is wrong.
+    listed = json.loads(json.dumps(SAMPLE_POINTS))
+    listed["points"][0]["row"]["enums"] = [{"field": "category", "values": ["services"]}]
+    if not refuses(
+        "an extension point publishing its closed sets in a shape this cannot read",
+        synthetic(), "in a shape this cannot read", Published(SAMPLE_VOCABULARY, listed),
+    ):
+        return 1
+
+    if read_published("/nowhere-at-all").asked:
+        print("::error::self-test: a directory that is not there read as published")
+        return 1
+    print("  ok   a directory that is not there is not a published set")
 
     # One pass, every violation: three faults at once, and all three named.
     broken = tomllib.loads((ROOT / MANIFEST).read_text(encoding="utf-8"))
