@@ -587,7 +587,8 @@ def validate_proofs(proofs: list, report: Report) -> None:
     )
 
 
-def validate_contributions(entries: list, plugin_id: str, published: Published, report: Report) -> None:
+def validate_contributions(entries: list, plugin_id: str, requires: dict,
+                           published: Published, report: Report) -> None:
     """Rows in registers lemonfiber already runs (F3-R33, F4-R21, F4-R22, ARCH-R113).
 
     Which points exist, and what a row at one carries, are lemonfiber's to say
@@ -638,6 +639,15 @@ def validate_contributions(entries: list, plugin_id: str, published: Published, 
 
         if published.asked:
             validate_contribution_row(entry, at, point, published, report)
+            needs = (published.point(point) or {}).get("requires")
+            if needs is not None:
+                report.check(
+                    needs in requires.get("capabilities", []),
+                    "[requires].capabilities",
+                    f"a manifest contributing at {point!r} asks for {needs!r} by name, so a "
+                    "lemonfiber that does not take contributions there refuses this manifest "
+                    "rather than reading the row and dropping it",
+                )
 
     for entry in entries:
         if not isinstance(entry, dict) or entry.get("at") != "doctor.remedy":
@@ -965,7 +975,7 @@ def validate(manifest: dict, report: Report, published: Published | None = None)
 
     contributions = manifest.get("contribution")
     if contributions is not None:
-        validate_contributions(contributions, plugin_id, published, report)
+        validate_contributions(contributions, plugin_id, requires or {}, published, report)
 
     recipes = manifest.get("recipe")
     if recipes is not None:
@@ -1020,11 +1030,13 @@ SAMPLE_POINTS = {
                 "enums": {"category": ["services", "network"]},
             },
             "occupied": ["storage.space"],
+            "requires": "doctor.contribute",
         },
         {
             "name": "doctor.remedy",
             "row": {"required": ["id", "for", "action", "why"], "optional": ["detail"]},
             "occupied": [],
+            "requires": "doctor.contribute",
         },
     ],
 }
@@ -1077,7 +1089,7 @@ def synthetic() -> dict:
             {"at": "doctor.remedy", "id": "sample:let-it-in", "for": "sample:guarded",
              "action": "Sign in", "why": "It is guarded"},
         ],
-        "requires": {"capabilities": ["service.add"]},
+        "requires": {"capabilities": ["service.add", "doctor.contribute"]},
     }
 
 
@@ -1207,6 +1219,9 @@ def self_test() -> int:
         ("a remedy attached to a bundled check",
          lambda m: m["contribution"][1].__setitem__("for", "storage.space"),
          "the identity a bundled row already holds"),
+        ("contributions on a manifest that never asked to make one",
+         lambda m: m["requires"]["capabilities"].remove("doctor.contribute"),
+         "asks for 'doctor.contribute' by name"),
         ("a recipe on a manifest that never asked to run one",
          lambda m: m.__setitem__("recipe", [{
              "id": "seed", "title": "Seed it", "why": "Because",
