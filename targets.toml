@@ -1,0 +1,18 @@
+# The lemonfiber release this plugin is validated and proved against (REPO-R56).
+#
+# It is deliberately not in `plugin.toml`, and could not be: `ARCH-R89` forbids a
+# manifest carrying a minimum lemonfiber version, because `F3-R21` requires an
+# unmet requirement to be refused by naming the capability that is missing rather
+# than a number that cannot say which one. What the manifest declares instead is
+# `[requires].capabilities`.
+#
+# This is a different fact, and a CI one: which release this repository's checks
+# run, and which release the version train re-validates this plugin against when
+# it cuts. A plugin that no longer validates against a new schema blocks that
+# release, and this line is how the train knows which plugin it is looking at.
+#
+# `0.16.0` is the release that implements plugins, and it is `planned`. Until it
+# ships there is nothing to run, and `.github/interim/` stands in — see
+# `schema_gate.py`, which fails the day the real thing appears.
+
+lemonfiber = "0.16.0"

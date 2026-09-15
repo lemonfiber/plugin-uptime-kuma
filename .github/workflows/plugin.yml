@@ -1,0 +1,82 @@
+# What this repository says about its own plugin, before anybody reads the diff.
+#
+# `F3-R9` asks for the manifest schema to be validated in CI so a malformed
+# contribution is caught before merge, and `F5-R2` asks for every declared proof
+# to run. `F10-R7` is the reason both run *here* rather than only in the
+# catalogue: an author's own repository has to run the same commands the
+# catalogue runs, or the first time a plugin meets them is in somebody else's
+# pull request.
+#
+# The commands are not the ones it will run. `lemonfiber plugin validate` and
+# `lemonfiber plugin prove` arrive with `0.16.0`, which is planned; `targets.toml`
+# names that release and `.github/interim/` stands in until it exists. The
+# `schema` job below is what ends the arrangement: it fails the day a lemonfiber
+# release publishes the schema, rather than letting the stand-in quietly outlive
+# it.
+name: plugin
+on: [pull_request]
+permissions:
+  contents: read
+
+jobs:
+  # Against the contract, in one pass, every violation named with its location.
+  # The self-test runs first: a gate nobody has seen fail is a gate nobody knows
+  # the shape of.
+  manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: The stand-in refuses what it exists to refuse
+        run: python3 .github/interim/validate.py --self-test
+      - name: plugin.toml conforms to the contract
+        run: python3 .github/interim/validate.py
+
+  # Against the recordings, which is what lets this run with no live instance
+  # anywhere (F10-R4). A proof that could not be run is reported unproven and is
+  # not counted as a pass (F3-R5).
+  proofs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Every declared proof, against the recorded responses
+        run: python3 .github/interim/prove.py --against fixtures
+
+  # The declared digest is in the registry, the tag beside it still names it,
+  # and whether anything signed it — reported as unproven where nothing did,
+  # never as verified (F3-R25).
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: The image this plugin installs
+        run: python3 .github/interim/image_gate.py
+
+  # And the register that points the other way.
+  schema:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Has the published schema arrived
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/interim/schema_gate.py
