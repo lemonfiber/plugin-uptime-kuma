@@ -74,8 +74,19 @@ jobs:
           python-version: "3.12"
       - name: Everything this manifest declares, against the recorded responses
         run: python3 .github/interim/prove.py --against fixtures --report proofs.json
+      # A bare `git diff --exit-code` prints a diff and no reason for it, which
+      # leaves whoever reads it to work out both what the file is and which of
+      # the two copies is wrong. Neither is: the committed one is a record and
+      # the run just wrote the current one.
       - name: The committed report is the one this run would write
-        run: git diff --exit-code proofs.json
+        run: |
+          if git diff --exit-code -- proofs.json; then exit 0; fi
+          echo "::error::proofs.json is not what this run writes. It is the record \
+          the release train reads, so it is generated and committed together with \
+          the manifest it is about: run \`python3 .github/interim/prove.py --against \
+          fixtures --report proofs.json\` and commit the result. The diff above is \
+          the committed file against what this run produced (F3-R5)."
+          exit 1
 
   # The declared digest is in the registry, the tag beside it still names it,
   # and whether anything signed it — reported as unproven where nothing did,
