@@ -66,14 +66,17 @@ manifest carrying one is refused.
 ## Checks
 
 ```
-python3 .github/interim/validate.py --self-test   # the gate refuses what it should
-python3 .github/interim/validate.py              # the manifest against the contract
-python3 .github/interim/prove.py                  # everything declared, against the recordings
-python3 .github/interim/prove.py --against http://127.0.0.1:3001   # against a live one
-python3 .github/interim/image_gate.py             # the digest, its tag, its signature state
-python3 .github/interim/schema_gate.py            # fails the day the real schema lands
-python3 .github/interim/vocabulary_gate.py        # every claim, against what lemonfiber publishes now
+just ci        # every gate CI runs over this repository, in CI's order
+just live      # the same proofs against a running instance
 ```
+
+`just` lists the recipes `ci` is made of. The jobs it does not run are named in
+the `justfile` beside the recipe, with what covers each.
+
+`prove.py` is given `--against fixtures --report proofs.json`, which is what CI
+runs it with. Without `--report` the assertions are proved and `proofs.json` is
+left untouched, so a run that reports everything passing is still refused by
+`git diff --exit-code proofs.json` — which says nothing but the diff.
 
 ## The harness is not this repository's
 
@@ -84,5 +87,8 @@ and copy it here; changing it here fails.
 
 ## Before you open a PR
 
-- Cite a spec identifier in a commit `Spec:` trailer and the PR body.
-- No AI attribution in commits.
+`just ci` turns this clone's git hooks on as its first step, and
+`.githooks/commit-msg` then refuses a commit that CI would refuse — a
+non-conventional subject, a missing sign-off, a missing `Spec:` citation, or a
+trailer crediting an assistant. All four rules are in
+[50-governance/contributing.md](https://github.com/lemonfiber/spec/blob/main/50-governance/contributing.md).
