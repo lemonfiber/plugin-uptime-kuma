@@ -312,13 +312,22 @@ def validate_config_path(service: dict, report: Report) -> None:
     )
 
 
-def validate_provides(service: dict, published: Published, report: Report) -> None:
+def validate_provides(service: dict, plugin_id: str, published: Published, report: Report) -> None:
     """Capabilities claimed (F4-R1, ARCH-R102).
 
     Two shapes and no third. A core name is lemonfiber's, comes from the
     published vocabulary, and has to be demonstrated by a `[[claim]]`; a
     namespaced one is this plugin's, is inert until something asks for it, and
     has no published contract to satisfy.
+
+    The namespace is the **plugin's** and not the service's. `F4-R4` gives it to
+    the plugin, `F4-R16` says the same of a contribution, and the contribution
+    half of this file has always read it that way. Deriving it from the service
+    id instead agrees with the plugin id for as long as a plugin names its one
+    service after itself, which both published plugins do — so the disagreement
+    costs nothing until somebody names a service anything else, and then refuses
+    `plex:direct-play` from a plugin called `plex` for being insufficiently
+    called `plex-server`. That name is F4's own example of a well-formed one.
     """
     where = "[[service]].provides"
     claims = service.get("provides")
@@ -326,7 +335,7 @@ def validate_provides(service: dict, published: Published, report: Report) -> No
         return
     if not report.check(isinstance(claims, list), where, "must be an array of capability names"):
         return
-    prefix = f"{service.get('id', '')}:"
+    prefix = f"{plugin_id}:"
     for claim in claims:
         if not report.check(isinstance(claim, str) and claim, where, f"{claim!r} is not a capability name"):
             continue
@@ -905,7 +914,7 @@ def validate_destination(destination: object, where: str, report: Report) -> Non
         )
 
 
-def validate_service(service: dict, published: Published, report: Report) -> None:
+def validate_service(service: dict, plugin_id: str, published: Published, report: Report) -> None:
     where = "[[service]]"
     for field in SERVICE_REQUIRED:
         report.check(field in service, where, f"missing required field {field!r}")
@@ -973,7 +982,7 @@ def validate_service(service: dict, published: Published, report: Report) -> Non
         )
 
     validate_config_path(service, report)
-    validate_provides(service, published, report)
+    validate_provides(service, plugin_id, published, report)
 
     health = service.get("health")
     if health is not None:
@@ -1004,7 +1013,7 @@ def validate(manifest: dict, report: Report, published: Published | None = None)
         report.check(len(services) == 1, MANIFEST,
                      f"{len(services)} services declared; this schema version permits exactly one")
         for service in services:
-            validate_service(service, published, report)
+            validate_service(service, plugin_id, published, report)
         first = services[0]
 
     requires = manifest.get("requires")
@@ -1168,6 +1177,23 @@ def refuses(label: str, manifest: dict, expected: str, published: Published) -> 
     return True
 
 
+def accepts(label: str, manifest: dict, published: Published) -> bool:
+    """The other half of a rule: what it must let through.
+
+    A rule is only half described by what it refuses. Where a refusal's edge is
+    a name — one string being compared against another — the case on the far
+    side of that edge is where the rule goes wrong quietly, because too strict
+    reads as a plugin's mistake rather than the validator's.
+    """
+    report = Report()
+    validate(manifest, report, published)
+    if report.faults:
+        print(f"::error::self-test: {label} was refused — said: {' '.join(report.faults)}")
+        return False
+    print(f"  ok   {label} accepted")
+    return True
+
+
 def self_test() -> int:
     """Every rule above refuses the shape it exists to refuse."""
     sound = tomllib.loads((ROOT / MANIFEST).read_text(encoding="utf-8"))
@@ -1231,6 +1257,25 @@ def self_test() -> int:
         break_it(broken)
         if not refuses(label, broken, expected, Published(None, None)):
             return 1
+
+    # The namespace belongs to the plugin, and the only manifest that can tell
+    # the difference is one whose service is not named after it. Both published
+    # plugins name theirs after themselves, and so does the manifest in this
+    # repository, so this pair of cases is the whole of the evidence that
+    # `provides` reads the plugin id — the refusal alone would pass just as well
+    # against a validator reading the service id.
+    renamed = tomllib.loads((ROOT / MANIFEST).read_text(encoding="utf-8"))
+    plugin_id = renamed["plugin"]["id"]
+    renamed["service"][0]["id"] = f"{plugin_id}-server"
+    if not accepts("a capability in the plugin's namespace, on a service named otherwise",
+                   renamed, Published(None, None)):
+        return 1
+
+    trespassing = tomllib.loads((ROOT / MANIFEST).read_text(encoding="utf-8"))
+    trespassing["service"][0]["provides"] = ["somebody-else:thing"]
+    if not refuses("a capability in another plugin's namespace", trespassing,
+                   "nor namespaced with this plugin's id", Published(None, None)):
+        return 1
 
     # The blocks a real manifest here may not carry at all, against a published
     # set small enough to read.
