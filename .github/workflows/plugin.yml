@@ -7,26 +7,29 @@
 # catalogue runs, or the first time a plugin meets them is in somebody else's
 # pull request.
 #
-# The commands are not the ones it will run. lemonfiber validating a manifest
-# itself is `F10-R3` and nothing ships it yet; what `0.16.0` publishes is the
-# schema and the vocabulary a manifest is held to, `targets.toml` names that
-# release, and `.github/interim/` stands in until the reader arrives. The
-# `schema` job below is what ends the arrangement: it fails the day a lemonfiber
-# release publishes the schema, rather than letting the stand-in quietly outlive
-# it.
+# The schema they are run against is lemonfiber's, generated from the types it
+# reads a manifest with and fetched on every run rather than copied once
+# (`ARCH-R92`). Nothing here describes the format; `F10-R2` forbids a second
+# description beside the generated one, and the harness carries none.
+#
+# The commands are still not the ones it will run. lemonfiber validating a
+# manifest itself is `F10-R3` and nothing ships it yet; `targets.toml` names the
+# release that will, and `.github/interim/` stands in until the reader arrives.
+# The `reader` job below is what ends the arrangement: it fails the day that
+# release is out, rather than letting the stand-in quietly outlive it.
 name: plugin
 on: [pull_request]
 permissions:
   contents: read
 
 jobs:
-  # Against the contract, in one pass, every violation named with its location.
-  # The self-test runs first: a gate nobody has seen fail is a gate nobody knows
-  # the shape of.
+  # Against everything lemonfiber publishes, in one pass, every violation named
+  # with its location. The self-test runs first: a gate nobody has seen fail is a
+  # gate nobody knows the shape of.
   #
-  # This half decides nothing that depends on knowing what lemonfiber publishes.
-  # It says which rules it did not decide rather than passing them, and the
-  # `vocabulary` job below is what decides them.
+  # One job rather than two. The schema, the capability vocabulary and the
+  # extension points are one set, fetched together, and splitting them left half
+  # the rules deciding nothing on a run of their own.
   manifest:
     runs-on: ubuntu-latest
     steps:
@@ -36,27 +39,15 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+      - name: The one dependency this harness has, and it is a schema reader
+        run: |
+          pip install --disable-pip-version-check --only-binary :all: jsonschema==4.25.1
       - name: The stand-in refuses what it exists to refuse
         run: python3 .github/interim/validate.py --self-test
-      - name: plugin.toml conforms to the contract
-        run: python3 .github/interim/validate.py
-
-  # The capability names and extension points this manifest declares into, held
-  # to what lemonfiber publishes now rather than to a copy taken once. A claim
-  # against a vocabulary that has moved is a claim of nothing.
-  vocabulary:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-      - name: Every claim and contribution, against what lemonfiber publishes
+      - name: plugin.toml, against what lemonfiber publishes now
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 .github/interim/vocabulary_gate.py
+        run: python3 .github/interim/published_gate.py
 
   # Against the recordings, which is what lets this run with no live instance
   # anywhere (F10-R4). A proof that could not be run is reported unproven and is
@@ -103,9 +94,9 @@ jobs:
       - name: The image this plugin installs
         run: python3 .github/interim/image_gate.py
 
-  # A register pointing the other way: it fails when the thing it stands in for
-  # arrives, so a stand-in cannot quietly outlive it.
-  schema:
+  # A register pointing the other way: it fails when the thing this harness
+  # stands in for arrives, so a stand-in cannot quietly outlive it.
+  reader:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -114,10 +105,10 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - name: Has the published schema arrived
+      - name: Has the reader this stands in for arrived
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 .github/interim/schema_gate.py
+        run: python3 .github/interim/reader_gate.py
 
   # `.github/interim/` exists byte for byte in three plugin repositories, and
   # `plugin-template` is where it is written. A copy that has quietly drifted is

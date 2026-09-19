@@ -37,23 +37,22 @@ hooks:
 #                                              a manifest
 #
 # Every gate CI runs over this repository's contents — not the whole of CI.
-ci: hooks manifest vocabulary proofs image schema typos links
+ci: hooks manifest proofs image reader typos links
 
-# The stand-in refuses what it exists to refuse, then the manifest against the
-# contract. The self-test runs first: a gate nobody has seen fail is a gate
-# nobody knows the shape of.
+# The stand-in refuses what it exists to refuse, then the manifest against
+# everything lemonfiber publishes: the generated schema, the capability
+# vocabulary and the extension points, as they are on its default branch now
+# rather than a copy taken once. The self-test runs first, because a gate nobody
+# has seen fail is a gate nobody knows the shape of.
 #
-# The self-test, then the manifest against the contract.
+# Needs `jsonschema` — the one library this harness asks for, and a schema
+# reader rather than anything that knows what a plugin is. Reads the forge; no
+# token needed.
+#
+# The self-test, then the manifest against what lemonfiber publishes.
 manifest:
     python3 .github/interim/validate.py --self-test
-    python3 .github/interim/validate.py
-
-# Every claim and contribution, against the vocabulary lemonfiber publishes now
-# rather than a copy taken once. Reads the forge; no token needed.
-#
-# Every claim and contribution, against what lemonfiber publishes now.
-vocabulary:
-    python3 .github/interim/vocabulary_gate.py
+    python3 .github/interim/published_gate.py
 
 # Everything the manifest declares, against the recorded responses — and the
 # committed report is the one this run writes.
@@ -82,14 +81,15 @@ live against="http://127.0.0.1:3001":
 image:
     python3 .github/interim/image_gate.py
 
-# The register pointing the other way: it fails the day lemonfiber publishes the
-# schema this harness stands in for. Without a token in the environment it
-# reports unproven rather than clear — `GH_TOKEN=$(gh auth token) just schema`
-# is how to get an answer out of it.
+# The register pointing the other way: it fails the day the release
+# `targets.toml` names is out, because that release ships the reader this whole
+# harness stands in for. Without a token in the environment it reports unproven
+# rather than clear — `GH_TOKEN=$(gh auth token) just reader` is how to get an
+# answer out of it.
 #
-# Refuses the day lemonfiber publishes the schema this stands in for.
-schema:
-    python3 .github/interim/schema_gate.py
+# Refuses the day the reader this stands in for is released.
+reader:
+    python3 .github/interim/reader_gate.py
 
 # Spell check.
 typos:

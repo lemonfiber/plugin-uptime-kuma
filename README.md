@@ -108,7 +108,7 @@ and Komga's `media.serve` and these two are the two halves of the same design
 working.
 
 What changed is that it is a fact rather than a guess.
-`.github/interim/vocabulary_gate.py` holds this manifest to the published set on
+`.github/interim/published_gate.py` holds this manifest to the published set on
 every run, and goes red the day either name becomes a core one.
 
 ## What it adds to what lemonfiber says
@@ -191,9 +191,9 @@ Proved by running, on `docker.io/louislam/uptime-kuma@sha256:917318f9…`:
 
 Proved only by validating:
 
-- that the manifest conforms, including the loopback-gets-no-hostname rule. There
-  is no published schema to conform *to*, so it is checked against the contract
-  document, and `schema_gate.py` fails the day a real one is published.
+- that the manifest conforms. It is held to lemonfiber's own generated schema,
+  fetched off its default branch on every run, and then to the capability
+  vocabulary and the extension points it publishes beside it.
 
 **Not proved at all, and not claimed:** that lemonfiber installs this, generates
 the mount at the declared path, or puts the dashboard entry in the Automation
