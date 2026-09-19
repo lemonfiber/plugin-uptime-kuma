@@ -56,7 +56,7 @@ manifest carrying one is refused.
   vocabulary exists now and neither is in it, because `F9-R3` keeps a capability
   nothing bundled implements out of the core set and nothing bundled watches
   endpoints. Do not "fix" that by reaching for a core-looking name;
-  `vocabulary_gate.py` holds this manifest to the published set on every run.
+  `published_gate.py` holds this manifest to the published set on every run.
 - **No field beyond the contract's set.** A manifest carrying one is refused by
   name rather than ignored (`ARCH-R84`).
 - **Nothing official about this plugin is a privilege.** If it ever needs one to

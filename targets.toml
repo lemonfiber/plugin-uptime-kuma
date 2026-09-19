@@ -12,7 +12,7 @@
 # release, and this line is how the train knows which plugin it is looking at.
 #
 # `0.16.0` is the release that implements plugins, and it is `planned`. Until it
-# ships there is nothing to run, and `.github/interim/` stands in — see
-# `schema_gate.py`, which fails the day the real thing appears.
+# ships there is no `lemonfiber plugin claims` to run, and `.github/interim/`
+# stands in — see `reader_gate.py`, which fails the day that release is out.
 
 lemonfiber = "0.16.0"
