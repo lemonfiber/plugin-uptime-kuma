@@ -1,36 +1,36 @@
 {
   "lemonfiber": "0.16.0",
-  "against": "fixtures",
+  "against": "recordings",
   "proofs": [
     {
       "id": "uptime-kuma.serves",
       "kind": "proof",
       "outcome": "passed",
-      "detail": "HTTP 200, and the body it declares"
+      "detail": "the recording answers what it declares"
     },
     {
       "id": "uptime-kuma.status-is-not-an-answer",
       "kind": "proof",
       "outcome": "passed",
-      "detail": "HTTP 200, and the body it declares"
+      "detail": "the recording answers what it declares"
     },
     {
       "id": "uptime-kuma.state-outlives-its-container",
       "kind": "proof",
       "outcome": "passed",
-      "detail": "HTTP 200, and the body it declares"
+      "detail": "the recording answers what it declares"
     },
     {
       "id": "uptime-kuma:set-up",
       "kind": "check",
       "outcome": "passed",
-      "detail": "HTTP 200, and the body it declares"
+      "detail": "the recording answers what it declares"
     },
     {
       "id": "uptime-kuma:api-still-answers-json",
       "kind": "check",
       "outcome": "passed",
-      "detail": "HTTP 200, and the body it declares"
+      "detail": "the recording answers what it declares"
     }
   ]
 }

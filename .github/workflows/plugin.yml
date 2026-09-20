@@ -54,17 +54,44 @@ jobs:
   # not counted as a pass (F3-R5). The report is committed, so a run that would
   # write a different one fails rather than silently disagreeing with the record
   # the release train reads.
+  #
+  # The verdicts are the reader's own. `lemonfiber plugin claims` runs every
+  # bound probe, every proof and every contributed check against the recording
+  # it names, and `prove.py` asks it and writes down what it said — because a
+  # second evaluator in Python is free to disagree with the one an operator
+  # runs, and did.
+  #
+  # Building it from source is what that costs until the release `targets.toml`
+  # names is out. The checkout is at `main` and unpinned, for the same reason
+  # `published_gate.py` reads the contract at `main`: what this plugin is held
+  # to is what lemonfiber decides now, not what it decided when somebody wrote a
+  # pin down.
   proofs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: lemonfiber/lemonfiber
+          ref: main
+          path: .reader
+          submodules: recursive
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: .reader
+      - name: The reader whose verdicts these are
+        run: cargo build --quiet --release -p lemonfiber --manifest-path .reader/Cargo.toml
       - name: Everything this manifest declares, against the recorded responses
-        run: python3 .github/interim/prove.py --against fixtures --report proofs.json
+        env:
+          LEMONFIBER: ${{ github.workspace }}/.reader/target/release/lemonfiber
+        run: python3 .github/interim/prove.py --report proofs.json
       # A bare `git diff --exit-code` prints a diff and no reason for it, which
       # leaves whoever reads it to work out both what the file is and which of
       # the two copies is wrong. Neither is: the committed one is a record and
@@ -74,9 +101,9 @@ jobs:
           if git diff --exit-code -- proofs.json; then exit 0; fi
           echo "::error::proofs.json is not what this run writes. It is the record \
           the release train reads, so it is generated and committed together with \
-          the manifest it is about: run \`python3 .github/interim/prove.py --against \
-          fixtures --report proofs.json\` and commit the result. The diff above is \
-          the committed file against what this run produced (F3-R5)."
+          the manifest it is about: run \`python3 .github/interim/prove.py --report \
+          proofs.json\` with a lemonfiber on the path, and commit the result. The \
+          diff above is the committed file against what this run produced (F3-R5)."
           exit 1
 
   # The declared digest is in the registry, the tag beside it still names it,

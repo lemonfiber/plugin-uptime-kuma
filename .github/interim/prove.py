@@ -1,36 +1,36 @@
 #!/usr/bin/env python3
-"""Run what this plugin declares — until lemonfiber runs it.
+"""Ask the reader what this plugin's own recordings say about it.
 
 **This is CI harness, not plugin content.** A plugin is `plugin.toml` and the
 recordings in `fixtures/`. Nothing under `.github/` is installed, and lemonfiber
 never runs any of it (`F3-R6`).
 
-`F3-R3` says a plugin's declared proofs run in the existing verification engine,
-the same way the bundled ones do, and `F10-R3` says proving works against a local
-path with no catalogue and no network. That engine is in lemonfiber and nothing
-reaches it from outside yet. This stands in, and is written to be thrown away:
-the day lemonfiber proves a manifest on a path, `plugin.yml` calls it and this
-file goes.
+**Nothing here decides whether an assertion held.** `lemonfiber plugin claims`
+reads the manifest, runs every bound probe, every `[[proof]]` and every
+contributed check against the recording it names, and answers with no network,
+no catalogue and no stack. This asks it and writes down what it said.
 
-Three kinds of assertion, run the same way and reported apart, because they are
-answerable at different moments and by different things:
+That is a change from what stood here, and it is the same change `validate.py`
+made for the schema. A second evaluator written in Python is free to disagree
+with the one an operator runs, and it did: the reader reaches a place in an
+answer by JSON Pointer and the copy here looked a key up in the top level, so
+the two would have reached opposite verdicts about every manifest that asserts
+anything below the first level. `F10-R2` forbids a second description of the
+*format*; this is the same objection one step along, about the *verdict*.
 
-    proof       what must hold before this plugin is installed (F3-R4)
-    probe       what demonstrates a core capability this service claims (F4-R24)
-    check       a row this plugin adds to the doctor's register (F3-R33)
+What is left here is the part that is genuinely this repository's: which reader
+answered, how its answer reads on a terminal, and the record a release train
+re-reads rather than re-running.
 
-Two modes, and the difference is reported rather than blurred (`F10-R6`):
+    --report FILE        write the record the release train reads
 
-    --against fixtures   the recorded responses in fixtures/, which is what lets
-                         this run with no live instance anywhere (`F10-R4`)
-    --against <base-url> a real instance
+The reader is found at `$LEMONFIBER`, or as `lemonfiber` on the path. Without
+one, every assertion is **unproven** — never a pass — because nothing has been
+asked. `targets.toml` names the release that ships it; until that release, CI
+builds it from source and `reader_gate.py` is what ends the arrangement.
 
-Three verdicts, never two (`F3-R5`, `F4-R7`): one that passed, one that failed,
-and one that could not be run at all — which is reported as unproven and is never
-counted as a pass. A probe the published vocabulary says needs the operator's
-credential is the third of those against a live service, because a manifest holds
-no credential until recipes arrive and a runner that could not ask has
-established nothing about the service.
+Three verdicts, never two (`F3-R5`, `F4-R7`), and they are the reader's own
+words rather than this file's reading of them.
 
 Exit 0 = everything passed, 1 = one failed or could not be run.
 """
@@ -39,211 +39,154 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
+import shutil
+import subprocess
 import sys
 import tomllib
-import urllib.error
-import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 MANIFEST = "plugin.toml"
 TARGETS = "targets.toml"
-VOCABULARY = "capability-vocabulary.json"
-ATTEMPT_TIMEOUT_S = 10
 
-PASS, FAIL, UNPROVEN = "pass", "fail", "unproven"
+# How long the reader is given. It reads files in a directory and asks nothing of
+# anything, so a run that takes longer than this is a reader that is stuck rather
+# than a reader that is busy.
+READ_TIMEOUT_S = 120
 
-TYPES = {"bool": bool, "int": int, "str": str, "list": list, "dict": dict}
+PASSED, FAILED, UNPROVEN = "passed", "failed", "unproven"
+
+# The words the reader's own report uses for a verdict, which are the words this
+# writes down. Held to rather than translated: a report saying `fail` where the
+# reader said `failed` is a third vocabulary for one fact.
+VERDICTS = (PASSED, FAILED, UNPROVEN)
 
 
-def declared() -> list[dict]:
-    """Every assertion in the manifest, each carrying what kind it is.
+def reader() -> str | None:
+    """The reader this run will ask, or nothing where there is none to ask."""
+    named = os.environ.get("LEMONFIBER")
+    if named:
+        return named if pathlib.Path(named).is_file() else None
+    return shutil.which("lemonfiber")
 
-    Flattened into one list because the runner does not care which block a
-    request and an expectation came out of, and the report does — so the kind
-    rides along rather than the runner being told three times.
+
+def asked(binary: str) -> tuple[dict | None, str | None]:
+    """What the reader says about this plugin, or why it could not be asked.
+
+    The failure paths are separated because they are different news. A reader
+    that is not here is the expected state before the release that ships it; a
+    reader that answered with something this cannot read is a change in the
+    report's shape, which is a thing to be told rather than to guess past.
     """
-    manifest = tomllib.loads((ROOT / MANIFEST).read_text(encoding="utf-8"))
+    try:
+        ran = subprocess.run(
+            [binary, "--json", "plugin", "claims", str(ROOT)],
+            capture_output=True, text=True, check=False, timeout=READ_TIMEOUT_S,
+        )
+    except (OSError, subprocess.SubprocessError) as unrunnable:
+        return None, f"{binary} could not be run: {unrunnable}"
+    # A non-zero exit is the reader's verdict, not a failure to ask: it exits
+    # non-zero for a plugin it would not install, and the report on stdout is
+    # exactly the one this is here to write down.
+    if not ran.stdout.strip():
+        why = ran.stderr.strip()[:400] or f"exit {ran.returncode}"
+        return None, f"{binary} answered nothing: {why}"
+    try:
+        answered = json.loads(ran.stdout)
+    except ValueError as unreadable:
+        return None, f"{binary} answered with something that is not JSON: {unreadable}"
+    if not isinstance(answered, dict):
+        return None, f"{binary} answered with something that is not a report"
+    return answered, None
+
+
+def listed(value: object) -> list:
+    """A value as the list it should be, or an empty one."""
+    return value if isinstance(value, list) else []
+
+
+def verdict(held: object) -> tuple[str, str]:
+    """One verdict as the reader wrote it, and the sentence beside it.
+
+    A shape this cannot read becomes `unproven` and says so. It is the reader's
+    report and this file does not describe it; what it can insist on is that a
+    verdict it cannot read is never counted as one that passed.
+    """
+    if not isinstance(held, dict):
+        return UNPROVEN, "the reader's verdict was not in a shape this can read"
+    outcome = held.get("outcome")
+    if outcome == PASSED:
+        return PASSED, "the recording answers what it declares"
+    if outcome == FAILED:
+        faults = [str(one) for one in listed(held.get("faults"))]
+        return FAILED, "; ".join(faults) or "refuted, and the reader said no more"
+    if outcome == UNPROVEN:
+        return UNPROVEN, str(held.get("why") or "the reader said no more")
+    return UNPROVEN, f"the reader answered {outcome!r}, which is not one of: {', '.join(VERDICTS)}"
+
+
+def assertions(report: dict) -> list[dict]:
+    """Every assertion the reader reached a verdict about, in one list.
+
+    Flattened because a run reports one line each and a release train counts
+    them; which block each came out of rides along as `kind`, the way it did
+    when this file ran them itself.
+    """
     found: list[dict] = []
-    for proof in manifest.get("proof", []):
-        found.append({"kind": "proof", "id": proof.get("id"), **proof})
-    for claim in manifest.get("claim", []):
-        for probe in claim.get("probe", []):
+    for claiming in listed(report.get("capabilities")):
+        if not isinstance(claiming, dict):
+            continue
+        for ran in listed(claiming.get("probes")):
+            if not isinstance(ran, dict):
+                continue
             found.append({
                 "kind": "probe",
-                "capability": claim.get("capability"),
-                "id": f"{claim.get('capability')}/{probe.get('id')}",
-                "probe": probe.get("id"),
-                **{key: value for key, value in probe.items() if key != "id"},
+                "id": f"{claiming.get('name')}/{ran.get('probe')}",
+                "verdict": ran.get("verdict"),
             })
-    for entry in manifest.get("contribution", []):
-        if entry.get("at") == "doctor.check":
-            found.append({"kind": "check", "id": entry.get("id"), **entry})
+    for kind, held in (("proof", "proofs"), ("check", "checks")):
+        for one in listed(report.get(held)):
+            if not isinstance(one, dict):
+                continue
+            found.append({"kind": kind, "id": one.get("id"), "verdict": one.get("verdict")})
     return found
 
 
-def credentialled(published: str | None) -> set[tuple[str, str]]:
-    """Which probes the published vocabulary says need the operator's credential.
+def unasked(why: str) -> list[dict]:
+    """Every assertion the manifest declares, with nothing established about it.
 
-    Empty where nothing was published, which makes every probe runnable against a
-    live service and lets it fail honestly. Knowing less is not the same as
-    assuming the answer.
+    Read off the manifest rather than off a report there is none of, so a run
+    with no reader still names what went unasked. It does not decide anything
+    about them — that is the whole point of the file this is — it says which
+    questions were not put.
     """
-    if published is None:
-        return set()
-    path = pathlib.Path(published) / VOCABULARY
-    if not path.is_file():
-        return set()
     try:
-        vocabulary = json.loads(path.read_text(encoding="utf-8"))
-    except ValueError:
-        return set()
-    return {
-        (capability.get("name"), probe.get("id"))
-        for capability in vocabulary.get("capabilities", [])
-        for probe in capability.get("probes", [])
-        if probe.get("credential") == "operator"
-    }
-
-
-def answer_from_fixture(assertion: dict) -> tuple[dict, str | None]:
-    """The recorded response this assertion names, and why it could not be read."""
-    named = assertion.get("fixture")
-    if not named:
-        return {}, "declares no fixture, so there is nothing to run it against"
-    path = ROOT / named
-    if not path.is_file():
-        return {}, f"names {named}, which is not in this source"
-    try:
-        recorded = json.loads(path.read_text(encoding="utf-8"))
-    except ValueError as unreadable:
-        return {}, f"{named} is not readable as JSON: {unreadable}"
-
-    asked = assertion.get("request", {})
-    recorded_request = recorded.get("request", {})
-    if recorded_request != asked:
-        return {}, (
-            f"{named} records {recorded_request.get('method')} {recorded_request.get('path')}, "
-            f"and this asks {asked.get('method')} {asked.get('path')}"
-        )
-    return recorded.get("response", {}), None
-
-
-def answer_from_service(assertion: dict, base: str) -> tuple[dict, str | None]:
-    """One request to a running instance, and what came back."""
-    asked = assertion.get("request", {})
-    if asked.get("method", "GET") != "GET":
-        return {}, f"only GET is implemented here, and this asks {asked.get('method')}"
-    url = base.rstrip("/") + asked.get("path", "/")
-    request = urllib.request.Request(url, method="GET")
-    try:
-        with urllib.request.urlopen(request, timeout=ATTEMPT_TIMEOUT_S) as reply:
-            status, headers, body = reply.status, dict(reply.headers), reply.read()
-    except urllib.error.HTTPError as answered:
-        status, headers, body = answered.code, dict(answered.headers), answered.read()
-    except OSError as unreachable:
-        return {}, f"{url} could not be reached: {type(unreachable).__name__}: {unreachable}"
-    try:
-        parsed = json.loads(body) if body else None
-    except ValueError:
-        parsed = None
-    answer = {
-        "status": status,
-        "headers": {"content-type": headers.get("Content-Type", "")},
-        "json": parsed,
-    }
-    if parsed is None:
-        answer["body_starts_with"] = body.decode("utf-8", "replace")[:200]
-    return answer, None
-
-
-def judge(assertion: dict, answer: dict) -> list[str]:
-    """Every way this answer is not the one that was declared."""
-    expect = assertion.get("expect", {})
-    faults: list[str] = []
-
-    if "status" in expect and answer.get("status") != expect["status"]:
-        faults.append(f"status {answer.get('status')!r}, and it declares {expect['status']!r}")
-
-    body = answer.get("json")
-
-    if "json" in expect:
-        wanted = expect["json"]
-        if not isinstance(body, dict):
-            faults.append(f"the body is not a JSON object: {body!r}")
-        else:
-            for key, value in wanted.items():
-                if body.get(key) != value:
-                    faults.append(f"{key} is {body.get(key)!r}, and it declares {value!r}")
-
-    for key in expect.get("json_has_keys", []):
-        if not isinstance(body, dict) or key not in body:
-            faults.append(f"the body carries no {key!r}")
-
-    if "content_type" in expect:
-        got = answer.get("headers", {}).get("content-type", "")
-        if expect["content_type"] not in got:
-            faults.append(
-                f"the content type is {got!r}, and it declares it carries "
-                f"{expect['content_type']!r}"
-            )
-
-    if "body_starts_with" in expect:
-        got = answer.get("body_starts_with", "")
-        if not got.startswith(expect["body_starts_with"]):
-            faults.append(
-                f"the body starts {got[:40]!r}, and it declares it starts "
-                f"{expect['body_starts_with']!r}"
-            )
-
-    if expect.get("json_is_absent") and body is not None:
-        faults.append(f"the body parsed as JSON, and it declares it does not: {body!r}")
-
-    if "json_array_min" in expect:
-        wanted = expect["json_array_min"]
-        if not isinstance(body, list):
-            faults.append(f"the body is not a JSON array: {body!r}")
-        elif len(body) < wanted:
-            faults.append(f"the array holds {len(body)}, and it declares at least {wanted}")
-
-    for key, least in expect.get("json_at_least", {}).items():
-        if not isinstance(body, dict) or key not in body:
-            faults.append(f"the body carries no {key!r}")
-        elif not isinstance(body[key], (int, float)) or body[key] < least:
-            faults.append(f"{key} is {body[key]!r}, and it declares at least {least!r}")
-
-    for key, name in expect.get("json_types", {}).items():
-        if not isinstance(body, dict) or key not in body:
+        manifest = tomllib.loads((ROOT / MANIFEST).read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        # A manifest that will not read is `validate.py`'s news to break, and a
+        # traceback here would be a gate nobody can tell apart from one.
+        return []
+    found: list[dict] = []
+    for proof in listed(manifest.get("proof")):
+        if isinstance(proof, dict):
+            found.append({"kind": "proof", "id": proof.get("id"), "verdict": None})
+    for claim in listed(manifest.get("claim")):
+        if not isinstance(claim, dict):
             continue
-        wanted = TYPES.get(name)
-        if wanted is None:
-            faults.append(f"it names a type this runner does not know: {name!r}")
-        elif not isinstance(body[key], wanted):
-            faults.append(f"{key} is {type(body[key]).__name__}, and it declares {name}")
-
-    return faults
-
-
-def run(assertion: dict, against: str, needs_credential: set) -> tuple[str, str]:
-    if against == "fixtures":
-        answer, unrunnable = answer_from_fixture(assertion)
-    elif (assertion.get("capability"), assertion.get("probe")) in needs_credential:
-        return UNPROVEN, (
-            "the vocabulary declares this probe is asked with the operator's credential, and a "
-            "manifest holds none until recipes arrive — unproven, not failed"
-        )
-    else:
-        answer, unrunnable = answer_from_service(assertion, against)
-
-    if unrunnable is not None:
-        return UNPROVEN, unrunnable
-    if not assertion.get("expect"):
-        return UNPROVEN, "declares nothing it expects, so nothing about it can be decided"
-
-    faults = judge(assertion, answer)
-    if faults:
-        return FAIL, "; ".join(faults)
-    return PASS, f"HTTP {answer.get('status')}, and the body it declares"
+        for probe in listed(claim.get("probe")):
+            if isinstance(probe, dict):
+                found.append({
+                    "kind": "probe",
+                    "id": f"{claim.get('capability')}/{probe.get('id')}",
+                    "verdict": None,
+                })
+    for entry in listed(manifest.get("contribution")):
+        if isinstance(entry, dict) and entry.get("at") == "doctor.check":
+            found.append({"kind": "check", "id": entry.get("id"), "verdict": None})
+    for one in found:
+        one["why"] = why
+    return found
 
 
 def targeted() -> str | None:
@@ -264,9 +207,8 @@ def write_report(path: str, against: str, verdicts: list[tuple[dict, str, str]])
         "lemonfiber": targeted(),
         "against": against,
         "proofs": [
-            {"id": assertion.get("id"), "kind": assertion.get("kind"),
-             "outcome": "passed" if verdict == PASS else verdict, "detail": detail}
-            for assertion, verdict, detail in verdicts
+            {"id": one.get("id"), "kind": one.get("kind"), "outcome": outcome, "detail": detail}
+            for one, outcome, detail in verdicts
         ],
     }
     pathlib.Path(path).write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
@@ -274,50 +216,52 @@ def write_report(path: str, against: str, verdicts: list[tuple[dict, str, str]])
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--against",
-        default="fixtures",
-        help="'fixtures' for the recorded responses, or a base URL for a running instance",
-    )
-    parser.add_argument("--published", metavar="DIR",
-                        help=f"a directory holding lemonfiber's published {VOCABULARY}")
     parser.add_argument("--report", metavar="FILE",
                         help="write the record a release train reads")
     args = parser.parse_args()
 
-    path = ROOT / MANIFEST
-    if not path.is_file():
+    if not (ROOT / MANIFEST).is_file():
         print(f"::error::{MANIFEST} is missing")
         return 1
-    assertions = declared()
-    if not assertions:
+
+    binary = reader()
+    report, why = asked(binary) if binary else (None, "no lemonfiber on the path, and "
+                                                      "$LEMONFIBER names none")
+    if report is None:
+        print(f"Nothing was asked: {why}\n")
+        found = unasked(why or "unasked")
+        verdicts = [(one, UNPROVEN, str(one["why"])) for one in found]
+        against = "nothing"
+    else:
+        against = str(report.get("against") or "an evidence this cannot name")
+        print(
+            f"Read by {binary}, against {against}. These are verdicts about what this\n"
+            "plugin declares, reached by the reader an operator runs — and against\n"
+            "recordings rather than a running service, which is the weaker claim and is\n"
+            "reported as the weaker one.\n"
+        )
+        for refusal in listed(report.get("refusals")):
+            if isinstance(refusal, dict):
+                print(f"  note  the reader refuses this manifest: "
+                      f"{refusal.get('location')} — {refusal.get('message')}")
+        found = assertions(report)
+        verdicts = [(one, *verdict(one.get("verdict"))) for one in found]
+
+    if not found:
         print(f"::error::{MANIFEST} declares nothing to run, and a plugin whose proofs do not "
               "pass is not installed")
         return 1
 
-    if args.against == "fixtures":
-        print(
-            "Run against recorded responses. These are proofs about what this plugin\n"
-            "declares, not about a running service — which is a weaker claim, and is\n"
-            "reported as the weaker one.\n"
-        )
-    else:
-        print(f"Run against {args.against}.\n")
-
-    needs_credential = credentialled(args.published)
-    verdicts: list[tuple[dict, str, str]] = []
-    for assertion in assertions:
-        verdict, detail = run(assertion, args.against, needs_credential)
-        verdicts.append((assertion, verdict, detail))
-        mark = {PASS: "  ok  ", FAIL: "  FAIL", UNPROVEN: "  ????"}[verdict]
-        print(f"{mark} {assertion['kind']:6} {assertion.get('id')!s:<34} {detail}")
+    for one, outcome, detail in verdicts:
+        mark = {PASSED: "  ok  ", FAILED: "  FAIL", UNPROVEN: "  ????"}[outcome]
+        print(f"{mark} {one['kind']:6} {one.get('id')!s:<34} {detail}")
 
     if args.report:
-        write_report(args.report, args.against, verdicts)
+        write_report(args.report, against, verdicts)
 
-    counted = [verdict for _, verdict, _ in verdicts]
-    failed, unproven = counted.count(FAIL), counted.count(UNPROVEN)
-    print(f"\n{counted.count(PASS)} passed, {failed} failed, {unproven} could not be run.")
+    counted = [outcome for _, outcome, _ in verdicts]
+    failed, unproven = counted.count(FAILED), counted.count(UNPROVEN)
+    print(f"\n{counted.count(PASSED)} passed, {failed} failed, {unproven} could not be run.")
 
     if unproven:
         print(

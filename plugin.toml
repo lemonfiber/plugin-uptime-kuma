@@ -74,7 +74,7 @@ provides = [
     "uptime-kuma:status-page",
 ]
 
-[wiring]
+[[wiring]]
 # No `hostname`. The tier decided that, not this plugin.
 dashboard_group = "Automation"
 

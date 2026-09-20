@@ -252,6 +252,7 @@ class Report:
     def __init__(self) -> None:
         self.faults: list[str] = []
         self.unasked: list[str] = []
+        self.the_readers: list[str] = []
 
     def fail(self, where: str, what: str) -> None:
         self.faults.append(f"{where}: {what}")
@@ -263,6 +264,16 @@ class Report:
 
     def skipped(self, what: str) -> None:
         self.unasked.append(what)
+
+    def elsewhere_(self, what: str) -> None:
+        """A rule this file never decides, whatever it was given.
+
+        Apart from `skipped` because the two are different news. One is *nobody
+        asked lemonfiber and these rules went undecided*, which a second run can
+        fix; this one is *this is not the stand-in's to decide and never was*,
+        and the run that decides it is `prove.py`, which asks the reader.
+        """
+        self.the_readers.append(what)
 
 
 class Unreadable(Exception):
@@ -485,7 +496,7 @@ def validate_provides(service: dict, plugin_id: str, published: Published, repor
             )
 
 
-def validate_claims(claims: list, service: dict, plugin_id: str,
+def validate_claims(claims: list, declared: list[str], plugin_id: str,
                     published: Published, report: Report) -> None:
     """The probes a core capability is demonstrated by (`F4-R24`, `ARCH-R109`, `ARCH-R116`).
 
@@ -495,7 +506,6 @@ def validate_claims(claims: list, service: dict, plugin_id: str,
     said it could do. Neither half is readable from the other's schema.
     """
     where = "[[claim]]"
-    declared = core_claims(service, plugin_id)
     seen: list[str] = []
 
     for index, claim in enumerate(claims):
@@ -510,7 +520,7 @@ def validate_claims(claims: list, service: dict, plugin_id: str,
         report.check(
             name in declared,
             at,
-            f"{name!r} is not in this service's `provides`, so the service has not said it can do it",
+            f"{name!r} is in no service's `provides`, so nothing here has said it can do it",
         )
         validate_claim_probes(claim, at, published, report)
 
@@ -923,10 +933,24 @@ def validate_destination(destination: object, where: str, report: Report) -> Non
     )
 
 
+# What the reader decides about a value that this file deliberately does not.
+# Each is a grammar rather than a shape, so the published schema cannot state it
+# and a copy here would be a second description of one — `F10-R2`'s objection
+# aimed at a value instead of at a table. `prove.py` runs the reader, so a
+# manifest that breaks either is refused there, in the reader's own words.
+THE_READERS = (
+    "whether `request.accept` is one media type, which the reader decides",
+    "whether every expectation key names a place in an answer, which the reader decides",
+    "which service a wiring, a proof or a contributed check names, which the reader decides",
+)
+
+
 def validate(manifest: dict, report: Report, published: Published | None = None) -> None:
     published = published or Published(None, None, None)
     against_the_schema(manifest, published, report)
     readable_expectations(published, report)
+    for one in THE_READERS:
+        report.elsewhere_(one)
 
     plugin = table(manifest.get("plugin"))
     plugin_id = plugin.get("id", "")
@@ -934,31 +958,24 @@ def validate(manifest: dict, report: Report, published: Published | None = None)
         validate_plugin(plugin, report)
 
     services = manifest.get("service")
-    first: dict = {}
+    declared: list[dict] = []
     if isinstance(services, list):
-        # One service, because this generation of the format describes one
-        # addition to a stack that already exists. Two would make "which one did
-        # I install" a question with no good answer, and none would make the rest
-        # of the manifest describe nothing.
-        report.check(
-            len(services) == 1, "[[service]]",
-            f"this generation of the format describes exactly one service and {len(services)} "
-            "are declared",
-        )
-        for service in services:
-            if isinstance(service, dict):
-                validate_service(service, report)
-        if services and isinstance(services[0], dict):
-            first = services[0]
-            validate_provides(first, plugin_id, published, report)
+        declared = [one for one in services if isinstance(one, dict)]
+        for service in declared:
+            validate_service(service, report)
+            validate_provides(service, plugin_id, published, report)
 
     requires = table(manifest.get("requires"))
 
     claims = manifest.get("claim")
-    if claims is not None or core_claims(first, plugin_id):
+    # Across every service rather than the first. A plugin may declare more than
+    # one, and at most one of them may declare a given core capability — which is
+    # the reader's rule and is why gathering them flat loses nothing here.
+    claimed = [name for service in declared for name in core_claims(service, plugin_id)]
+    if claims is not None or claimed:
         validate_claims(
             [one for one in listed(claims) if isinstance(one, dict)],
-            first, plugin_id, published, report,
+            claimed, plugin_id, published, report,
         )
 
     for proof in listed(manifest.get("proof")):
@@ -1128,8 +1145,6 @@ BROKEN = (
      "is not an https address"),
     ("a plugin joining no form at all",
      lambda m: m["plugin"].__setitem__("forms", []), "names no form"),
-    ("two services in one plugin",
-     lambda m: m["service"].append(dict(m["service"][0])), "exactly one service"),
     ("a digest that is not one",
      lambda m: m["service"][0].__setitem__("digest", "sha256:nope"), "hexadecimal characters"),
     ("an image carrying a second pin",
@@ -1153,8 +1168,9 @@ BROKEN = (
      "is not one plain absolute directory"),
     ("a core capability with no claim behind it",
      lambda m: m.pop("claim"), "is demonstrated, not asserted"),
-    ("a claim for something the service never said it could do",
-     lambda m: m["service"][0]["provides"].remove("media.serve"), "has not said it can do it"),
+    ("a claim for something no service said it could do",
+     lambda m: m["service"][0]["provides"].remove("media.serve"),
+     "is in no service's `provides`"),
     ("one capability claimed twice",
      lambda m: m["claim"].append(dict(m["claim"][0])), "is claimed twice"),
     ("a claim leaving one of its capability's probes unbound",
@@ -1262,8 +1278,60 @@ BROKEN = (
 )
 
 
+# Each case is a manifest changed one way that must **still** be accepted, and
+# the words that must not appear if it was.
+#
+# The half that was missing, and the reason a too-strict rule survived here for
+# two releases: a refusal case passes just as well against code that refuses too
+# much. Every rule that was loosened, and every shape somebody might reach for
+# and be wrongly refused, gets a case here rather than only one above.
+ACCEPTED = (
+    ("a second service beside the first",
+     lambda m: m["service"].append({
+         "id": "sample-stats", "name": "Sample statistics",
+         "image": "example.invalid/sample-stats", "digest": "sha256:" + "1" * 64,
+         "tag": "0.1.0", "criticality": "enhancing", "bind": "loopback", "port": 8181,
+         "provides": ["sample:extra"],
+     })),
+    ("a second service sharing this plugin's own namespaced capability",
+     lambda m: m["service"].append({
+         "id": "sample-stats", "name": "Sample statistics",
+         "image": "example.invalid/sample-stats", "digest": "sha256:" + "1" * 64,
+         "tag": "0.1.0", "criticality": "enhancing", "provides": ["sample:extra"],
+     })),
+    ("a request asking for one representation",
+     lambda m: m["claim"][0]["probe"][0]["request"].__setitem__("accept", "application/json")),
+    ("an expectation looking at a place inside the answer",
+     lambda m: m["claim"][0]["probe"][1]["expect"].__setitem__(
+         "json_has_keys", ["/MediaContainer/size"])),
+    ("an expectation picking an entry of a list by a field it holds",
+     lambda m: m["claim"][0]["probe"][1]["expect"].__setitem__(
+         "json_has_keys", ["/MediaContainer/Setting/[id=PublishServerOnPlexOnlineKey]/value"])),
+    ("a wiring naming the service it is about",
+     lambda m: m.__setitem__("wiring", [{"service": "sample", "hostname": "sample"}])),
+    ("a proof naming the service it asks",
+     lambda m: m["proof"][0].__setitem__("service", "sample")),
+    ("a contributed check naming the service it asks",
+     lambda m: m["contribution"][0].__setitem__("service", "sample")),
+    ("a contributed check counting what the operator holds",
+     lambda m: m["contribution"][0]["expect"].__setitem__("json_at_least", {"total": 1})),
+    ("a probe reading the answer as a list of no particular length",
+     lambda m: m["claim"][0]["probe"][1]["expect"].__setitem__("json_array_min", 0)),
+)
+
+
+def accepts(label: str, manifest: dict, published: Published) -> bool:
+    report = Report()
+    validate(manifest, report, published)
+    if report.faults:
+        print(f"::error::self-test: {label} was refused — said: {' '.join(report.faults)}")
+        return False
+    print(f"  ok   {label} accepted")
+    return True
+
+
 def self_test() -> int:
-    """Every rule above refuses the shape it exists to refuse."""
+    """Every rule above refuses the shape it exists to refuse, and no more."""
     published = Published(SAMPLE_SCHEMA, SAMPLE_VOCABULARY, SAMPLE_POINTS)
 
     here, why = manifest_here()
@@ -1293,6 +1361,12 @@ def self_test() -> int:
         broken = synthetic()
         break_it(broken)
         if not refuses(label, broken, expected, published):
+            return 1
+
+    for label, change_it in ACCEPTED:
+        changed = synthetic()
+        change_it(changed)
+        if not accepts(label, changed, published):
             return 1
 
     # An artefact in a shape this cannot read is a refusal naming the artefact,
@@ -1393,14 +1467,28 @@ def held(directory: str | None) -> int:
               "lemonfiber's published artefacts — run again with --published:")
         for one in report.unasked:
             print(f"    {one}")
-        return 0
-
-    print(
-        f"{MANIFEST} conforms to the published schema and holds against the published "
-        "vocabulary\nand the published extension points. What lemonfiber refuses beyond that "
-        "is answered by\nlemonfiber; this is a stand-in and the weaker of the two."
-    )
+    else:
+        print(
+            f"{MANIFEST} conforms to the published schema and holds against the published "
+            "vocabulary\nand the published extension points. What lemonfiber refuses beyond "
+            "that is answered by\nlemonfiber; this is a stand-in and the weaker of the two."
+        )
+    said_elsewhere(report)
     return 0
+
+
+def said_elsewhere(report: Report) -> None:
+    """The rules this file never decides, named rather than left out.
+
+    A gate reporting clear over a rule it never had is a gate somebody trusts
+    for more than it does. Each of these is the reader's, and `prove.py` asks
+    the reader — so they are decided on the same run, in the reader's own words.
+    """
+    if not report.the_readers:
+        return
+    print("\nNot this stand-in's to decide, and decided by `prove.py` asking the reader:")
+    for one in report.the_readers:
+        print(f"    {one}")
 
 
 def main() -> int:

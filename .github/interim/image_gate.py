@@ -35,9 +35,16 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 WANTED_ARCHES = {"amd64", "arm64"}
 
 
-def service() -> dict:
+def services() -> list[dict]:
+    """Every service this plugin installs.
+
+    All of them rather than the first. A plugin may declare more than one, and a
+    gate that asked about the first would leave the pin on the second unchecked —
+    which is the half of the pair an author is least likely to have looked at.
+    """
     manifest = tomllib.loads((ROOT / "plugin.toml").read_text(encoding="utf-8"))
-    return manifest["service"][0]
+    declared = manifest.get("service")
+    return [one for one in declared if isinstance(one, dict)] if isinstance(declared, list) else []
 
 
 def inspect(reference: str) -> tuple[dict | None, str]:
@@ -73,11 +80,26 @@ def arches(index: dict) -> set[str]:
 
 
 def main() -> int:
-    declared = service()
+    declared = services()
+    if not declared:
+        print("::error::plugin.toml declares no service, so there is no image to ask about")
+        return 1
+    faults = [fault for one in declared for fault in checked(one)]
+
+    if faults:
+        print(f"\n{len(faults)} problem(s).", file=sys.stderr)
+        return 1
+    print("\nEvery declared digest resolves, and each signature state is reported honestly.")
+    return 0
+
+
+def checked(declared: dict) -> list[str]:
+    """One service's image, and everything wrong with how it is pinned."""
     image, digest, tag = declared["image"], declared["digest"], declared["tag"]
     by_digest = f"{image}@{digest}"
     by_tag = f"{image}:{tag}"
-    faults = []
+    faults: list[str] = []
+    print(f"{declared['id']}:")
 
     index, why = inspect(by_digest)
     if index is None:
@@ -123,11 +145,7 @@ def main() -> int:
         print("       stand-in does not do. lemonfiber's own verification is what F3-R25 asks for.")
         faults.append(signature)
 
-    if faults:
-        print(f"\n{len(faults)} problem(s).", file=sys.stderr)
-        return 1
-    print("\nThe declared digest resolves, and its signature state is reported honestly.")
-    return 0
+    return faults
 
 
 if __name__ == "__main__":
