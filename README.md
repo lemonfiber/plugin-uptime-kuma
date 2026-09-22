@@ -33,14 +33,14 @@ takes_data  = false
 config_path = "/app/data"
 provides    = ["uptime-kuma:endpoint-monitor", "uptime-kuma:status-page"]
 
-[wiring]
+[[wiring]]
 dashboard_group = "Automation"
 ```
 
 **`loopback`, not `lan`.** It holds the credentials for every channel it notifies
 on and can be pointed at any address the machine can reach. That is the tier the
 automation apps are in — so it appears on the dashboard, and it gets **no proxy
-hostname**. `[wiring]` names none, and there is no field by which it could ask:
+hostname**. `[[wiring]]` names none, and there is no field by which it could ask:
 the tier decides, not the plugin (`ARCH-R104`).
 
 **`takes_data = false`.** It watches endpoints and reads no library, so the data

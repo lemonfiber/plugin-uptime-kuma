@@ -39,7 +39,7 @@ manifest carrying one is refused.
 - **The plugin is `plugin.toml` and `fixtures/`.** Proofs live in the manifest,
   not beside it: an installer reads one file, and a proof the installer never
   reads cannot be what `F3-R4` refuses an install over.
-- **This service is `loopback`, so it gets no proxy hostname.** `[wiring]` names
+- **This service is `loopback`, so it gets no proxy hostname.** `[[wiring]]` names
   none and there is no field by which it could ask. The tier decides.
 - **The image is named by digest** (`F3-R8`). Moving the pin means re-recording
   every fixture against the new image in the same change.

@@ -31,7 +31,7 @@ tag    = "2.5.4"
 port   = 3001
 # Admin, not household. It holds the credentials for every notification channel
 # it sends on, and it can be pointed at any address this machine can reach. That
-# is the tier the *arrs are in, and it is also why `[wiring]` below names no
+# is the tier the *arrs are in, and it is also why the `[[wiring]]` below names no
 # hostname: a loopback service does not get one, and there is no field by which
 # it could ask (ARCH-R104).
 bind   = "loopback"
@@ -74,7 +74,9 @@ provides = [
     "uptime-kuma:status-page",
 ]
 
-[wiring]
+# A list, and one entry, because wiring is a fact about a service rather than
+# about a plugin (ARCH-R127). One service here, so the entry names none.
+[[wiring]]
 # No `hostname`. The tier decided that, not this plugin.
 dashboard_group = "Automation"
 
