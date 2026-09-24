@@ -57,7 +57,8 @@ takes_data  = false
 # writable by anybody else.
 #
 # One directory, one mount, the source still lemonfiber's. Only the target is
-# named here. See spec#386 and README.md for the run that showed both halves.
+# named here. See spec#386 and docs/development.md for the run that showed both
+# halves.
 config_path = "/app/data"
 
 # What it can do (F4-R1), namespaced with the plugin's id (F4-R4).
