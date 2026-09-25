@@ -50,6 +50,9 @@ MANIFEST = "plugin.toml"
 TARGETS = "targets.toml"
 VOCABULARY = "capability-vocabulary.json"
 ATTEMPT_TIMEOUT_S = 10
+# The most of a value a refusal prints before it stops being readable: Plex answers
+# 151 settings at `/:/prefs`, and a refusal that printed all of them showed nothing.
+READABLE = 120
 
 PASS, FAIL, UNPROVEN = "pass", "fail", "unproven"
 
@@ -136,6 +139,10 @@ def answer_from_service(assertion: dict, base: str) -> tuple[dict, str | None]:
         return {}, f"only GET is implemented here, and this asks {asked.get('method')}"
     url = base.rstrip("/") + asked.get("path", "/")
     request = urllib.request.Request(url, method="GET")
+    if asked.get("accept"):
+        # The one thing a request may ask for (`ARCH-R123`); a service that answers
+        # XML unless asked for JSON would otherwise fail every JSON assertion.
+        request.add_header("Accept", asked["accept"])
     try:
         with urllib.request.urlopen(request, timeout=ATTEMPT_TIMEOUT_S) as reply:
             status, headers, body = reply.status, dict(reply.headers), reply.read()
@@ -157,8 +164,158 @@ def answer_from_service(assertion: dict, base: str) -> tuple[dict, str | None]:
     return answer, None
 
 
+class Malformed(ValueError):
+    """A key that names no place in any answer."""
+
+
+def steps(key: str) -> list[tuple[str, str] | str]:
+    """The way down a key names (`ARCH-R125`).
+
+    A plain name is a top-level member, which is what every key written before
+    pointers is. One beginning with `/` is a JSON Pointer, and a step written
+    `[field=value]` picks the one entry of a list whose field holds that value.
+    A named step comes back as its name and a selector as `(field, value)`.
+    """
+    if not key.startswith("/"):
+        return [key]
+    return [token(each) for each in key[1:].split("/")]
+
+
+def token(each: str) -> tuple[str, str] | str:
+    if each.startswith("[") and each.endswith("]"):
+        inside = each[1:-1]
+        if "=" not in inside:
+            raise Malformed(f"`{each}` names no field to pick by; a selector is written `[field=value]`")
+        field, value = inside.split("=", 1)
+        if not field:
+            raise Malformed(f"`{each}` picks by no field; a selector is written `[field=value]`")
+        if any(bracket in field + value for bracket in "[]"):
+            raise Malformed(f"`{each}` carries a bracket inside a selector, and one selector picks one entry")
+        return unescaped(field), unescaped(value)
+    if "[" in each or "]" in each:
+        raise Malformed(
+            f"`{each}` carries a bracket, and `[` and `]` are the selector's; an entry of a list "
+            "is picked by a step of its own, written `[field=value]`"
+        )
+    return unescaped(each)
+
+
+def unescaped(each: str) -> str:
+    read, letters = [], iter(each)
+    for letter in letters:
+        if letter != "~":
+            read.append(letter)
+            continue
+        following = next(letters, None)
+        if following == "0":
+            read.append("~")
+        elif following == "1":
+            read.append("/")
+        elif following is None:
+            raise Malformed(f"`{each}` ends in a `~`, which begins an escape and finishes none")
+        else:
+            raise Malformed(
+                f"`{each}` carries `~{following}`, and the only escapes are `~0` for a tilde "
+                "and `~1` for a slash"
+            )
+    return "".join(read)
+
+
+def is_scalar(held: object, wanted: str) -> bool:
+    """Whether an entry's field holds the text a selector names."""
+    if isinstance(held, bool):
+        return ("true" if held else "false") == wanted
+    if isinstance(held, (int, float, str)):
+        return str(held) == wanted
+    return False
+
+
+def held(body: object, key: str) -> tuple[bool, object, str]:
+    """What the body holds at the place a key names, and why nothing is there."""
+    try:
+        way = steps(key)
+    except Malformed as why:
+        return False, None, f"{key} names no place in an answer: {why}"
+    if body is None:
+        return False, None, f"the body carries no {key}: the body did not parse as a document"
+    at = body
+    for taken, step in enumerate(way):
+        reached = said(way[:taken])
+        if isinstance(step, str):
+            if not isinstance(at, dict):
+                return False, None, f"the body carries no {key}: {reached} is {kind_of(at)}"
+            if step not in at:
+                where = "" if taken == 0 else f": {reached} holds no {step}"
+                return False, None, f"the body carries no {key}{where}"
+            at = at[step]
+            continue
+        field, value = step
+        if not isinstance(at, list):
+            return False, None, (
+                f"the body carries no {key}: {reached} is {kind_of(at)}, "
+                "and a selector picks an entry of a list"
+            )
+        matched = [entry for entry in at if isinstance(entry, dict) and field in entry
+                   and is_scalar(entry[field], value)]
+        if not matched:
+            return False, None, f"the body carries no {key}: {reached} holds no entry whose {field} is {value!r}"
+        if len(matched) > 1:
+            return False, None, (
+                f"the body carries no {key}: {reached} holds {len(matched)} entries whose "
+                f"{field} is {value!r}, and a selector picks one"
+            )
+        at = matched[0]
+    return True, at, ""
+
+
+def said(walked: list[tuple[str, str] | str]) -> str:
+    """What to call the place a walk reached, spelled the way a key spells it."""
+    if not walked:
+        return "the body"
+
+    def escaped(name: str) -> str:
+        return name.replace("~", "~0").replace("/", "~1")
+
+    return "".join(
+        "/" + (escaped(step) if isinstance(step, str) else f"[{escaped(step[0])}={escaped(step[1])}]")
+        for step in walked
+    )
+
+
+def kind_of(value: object) -> str:
+    if isinstance(value, dict):
+        return "an object"
+    if isinstance(value, list):
+        return "a list"
+    if isinstance(value, bool):
+        return "a flag"
+    if isinstance(value, (int, float)):
+        return "a number"
+    if isinstance(value, str):
+        return "a word"
+    return "null"
+
+
+def same(wanted: object, found: object) -> bool:
+    """A flag matches a flag, a number a number and a word a word — never across."""
+    if isinstance(wanted, bool) or isinstance(found, bool):
+        return isinstance(wanted, bool) and isinstance(found, bool) and wanted == found
+    return type(wanted) is type(found) and wanted == found
+
+
+def readable(found: object) -> str:
+    whole = json.dumps(found)
+    return whole if len(whole) <= READABLE else f"{whole[:READABLE]}… ({len(whole)} characters in all)"
+
+
 def judge(assertion: dict, answer: dict) -> list[str]:
-    """Every way this answer is not the one that was declared."""
+    """Every way this answer is not the one that was declared.
+
+    A key is a place (`ARCH-R125`): a plain name is a top-level member, and one
+    beginning with `/` is a JSON Pointer that may pick an entry of a list by a
+    field it holds. The rules are the reader's, in `lemonfiber-plugin`'s
+    `pointing` and `lemonfiber-core`'s `judging`.
+    """
     expect = assertion.get("expect", {})
     faults: list[str] = []
 
@@ -167,18 +324,17 @@ def judge(assertion: dict, answer: dict) -> list[str]:
 
     body = answer.get("json")
 
-    if "json" in expect:
-        wanted = expect["json"]
-        if not isinstance(body, dict):
-            faults.append(f"the body is not a JSON object: {body!r}")
-        else:
-            for key, value in wanted.items():
-                if body.get(key) != value:
-                    faults.append(f"{key} is {body.get(key)!r}, and it declares {value!r}")
+    for key, value in expect.get("json", {}).items():
+        found, at, why = held(body, key)
+        if not found:
+            faults.append(why)
+        elif not same(value, at):
+            faults.append(f"{key} is {readable(at)}, and it declares {json.dumps(value)}")
 
     for key in expect.get("json_has_keys", []):
-        if not isinstance(body, dict) or key not in body:
-            faults.append(f"the body carries no {key!r}")
+        found, _, why = held(body, key)
+        if not found:
+            faults.append(why)
 
     if "content_type" in expect:
         got = answer.get("headers", {}).get("content-type", "")
@@ -197,29 +353,31 @@ def judge(assertion: dict, answer: dict) -> list[str]:
             )
 
     if expect.get("json_is_absent") and body is not None:
-        faults.append(f"the body parsed as JSON, and it declares it does not: {body!r}")
+        faults.append(f"the body parsed as JSON, and it declares it does not: {readable(body)}")
 
     if "json_array_min" in expect:
         wanted = expect["json_array_min"]
         if not isinstance(body, list):
-            faults.append(f"the body is not a JSON array: {body!r}")
+            faults.append(f"the body is not a JSON array: {readable(body)}")
         elif len(body) < wanted:
             faults.append(f"the array holds {len(body)}, and it declares at least {wanted}")
 
     for key, least in expect.get("json_at_least", {}).items():
-        if not isinstance(body, dict) or key not in body:
-            faults.append(f"the body carries no {key!r}")
-        elif not isinstance(body[key], (int, float)) or body[key] < least:
-            faults.append(f"{key} is {body[key]!r}, and it declares at least {least!r}")
+        found, at, why = held(body, key)
+        if not found:
+            faults.append(why)
+        elif isinstance(at, bool) or not isinstance(at, (int, float)) or at < least:
+            faults.append(f"{key} is {readable(at)}, and it declares at least {least!r}")
 
     for key, name in expect.get("json_types", {}).items():
-        if not isinstance(body, dict) or key not in body:
+        found, at, _ = held(body, key)
+        if not found:
             continue
         wanted = TYPES.get(name)
         if wanted is None:
             faults.append(f"it names a type this runner does not know: {name!r}")
-        elif not isinstance(body[key], wanted):
-            faults.append(f"{key} is {type(body[key]).__name__}, and it declares {name}")
+        elif not isinstance(at, wanted) or (wanted is int and isinstance(at, bool)):
+            faults.append(f"{key} is {type(at).__name__}, and it declares {name}")
 
     return faults
 
