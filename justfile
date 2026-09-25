@@ -23,7 +23,7 @@ hooks:
 #   commitlint, dco, attribution, spec-check   `.githooks/commit-msg` refuses all
 #                                              four of these before the push, and
 #                                              `hooks` above is what turns it on
-#   harness                                    `.github/interim/` here is compared
+#   harness                                    `.github/reader/` here is compared
 #                                              byte for byte against
 #                                              plugin-template's, which needs
 #                                              both trees
@@ -37,59 +37,37 @@ hooks:
 #                                              a manifest
 #
 # Every gate CI runs over this repository's contents — not the whole of CI.
-ci: hooks manifest proofs image reader typos links
+ci: hooks reader manifest proofs image typos links
 
-# The stand-in refuses what it exists to refuse, then the manifest against
-# everything lemonfiber publishes: the generated schema, the capability
-# vocabulary and the extension points, as they are on its default branch now
-# rather than a copy taken once. The self-test runs first, because a gate nobody
-# has seen fail is a gate nobody knows the shape of.
+# The release `targets.toml` names, fetched once into `.lemonfiber/` and checked
+# against its published digest, and what it says of this plugin. A capability it
+# does not offer a plugin is reported rather than failed on.
 #
-# Needs `jsonschema` — the one library this harness asks for, and a schema
-# reader rather than anything that knows what a plugin is. Reads the forge; no
-# token needed.
+# The release this plugin names, and what it says of it.
+reader:
+    python3 .github/reader/reader.py reader
+
+# Every refusal that release makes of the manifest, each with its location.
 #
-# The self-test, then the manifest against what lemonfiber publishes.
+# The manifest, as the release reads it.
 manifest:
-    python3 .github/interim/validate.py --self-test
-    python3 .github/interim/published_gate.py
+    python3 .github/reader/reader.py manifest
 
 # Everything the manifest declares, against the recorded responses — and the
-# committed report is the one this run writes.
-#
-# `--report proofs.json` is not optional. CI runs `prove.py` with it and then
-# `git diff --exit-code proofs.json`, so a run without the flag proves the
-# assertions and leaves the report it is about to be judged on untouched.
+# committed report is the one this run writes. `reader.py proofs` writes
+# `proofs.json` every time, and CI then runs `git diff --exit-code proofs.json`.
 #
 # Everything the manifest declares, and the report CI diffs.
 proofs:
-    python3 .github/interim/prove.py --against fixtures --report proofs.json
+    python3 .github/reader/reader.py proofs
     git diff --exit-code -- proofs.json
 
-# The same proofs against a service that is actually running, which is the
-# stronger claim and the one the recordings stand in for. No report: what CI
-# compares is the run against `fixtures`.
+# Every pinned digest is in its registry and its tag still names it, then what
+# vouches for each image. Needs `docker`.
 #
-# The same proofs against a service that is actually running.
-live against="http://127.0.0.1:3001":
-    python3 .github/interim/prove.py --against {{against}}
-
-# The declared digest is in the registry, the tag beside it still names it, and
-# whether anything signed it.
-#
-# The declared digest, its tag, and its signature state.
+# The pinned digests, their tags, and what vouches for them.
 image:
-    python3 .github/interim/image_gate.py
-
-# The register pointing the other way: it fails the day the release
-# `targets.toml` names is out, because that release ships the reader this whole
-# harness stands in for. Without a token in the environment it reports unproven
-# rather than clear — `GH_TOKEN=$(gh auth token) just reader` is how to get an
-# answer out of it.
-#
-# Refuses the day the reader this stands in for is released.
-reader:
-    python3 .github/interim/reader_gate.py
+    python3 .github/reader/reader.py image
 
 # Spell check.
 typos:
