@@ -67,9 +67,8 @@ config_path = "/app/data"
 # prediction here before it was published and it is the right answer rather than
 # a gap: F9-R3 keeps a capability nothing bundled implements out of the core set,
 # nothing bundled watches endpoints, and a namespace is exactly what an ecosystem
-# vocabulary is for. What changed is that it is now a fact rather than a guess —
-# `published_gate.py` holds this manifest to the published set on every run, and
-# would go red the day one of these names became a core one.
+# vocabulary is for. `lemonfiber plugin claims` holds this manifest to the
+# vocabulary of the release `targets.toml` names on every CI run.
 provides = [
     "uptime-kuma:endpoint-monitor",
     "uptime-kuma:status-page",

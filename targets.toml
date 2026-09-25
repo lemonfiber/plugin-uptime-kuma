@@ -11,8 +11,9 @@
 # it cuts. A plugin that no longer validates against a new schema blocks that
 # release, and this line is how the train knows which plugin it is looking at.
 #
-# `0.16.0` is the release that implements plugins, and it is `planned`. Until it
-# ships there is no `lemonfiber plugin claims` to run, and `.github/interim/`
-# stands in — see `reader_gate.py`, which fails the day that release is out.
+# `.github/reader/reader.py` fetches this release and asks it about the plugin,
+# so every verdict CI reports is this release's own. Naming it is not a claim the
+# plugin installs on it: a capability in `[requires]` the release does not offer
+# is reported by name (`F3-R21`) rather than failed on.
 
 lemonfiber = "0.16.0"

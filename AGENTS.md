@@ -34,8 +34,8 @@ manifest carrying one is refused.
 
 - **Nothing here executes.** A plugin is declarative data (`F3-R1`), and
   contributed code is never run, under any opt-in (`F3-R6`). The Python under
-  `.github/interim/` is CI harness, is not part of what an operator installs,
-  and is deleted when lemonfiber's own verbs replace it.
+  `.github/reader/` is CI harness and is not part of what an operator installs:
+  it fetches the lemonfiber release `targets.toml` names and asks it.
 - **The plugin is `plugin.toml` and `fixtures/`.** Proofs live in the manifest,
   not beside it: an installer reads one file, and a proof the installer never
   reads cannot be what `F3-R4` refuses an install over.
@@ -56,7 +56,8 @@ manifest carrying one is refused.
   vocabulary exists now and neither is in it, because `F9-R3` keeps a capability
   nothing bundled implements out of the core set and nothing bundled watches
   endpoints. Do not "fix" that by reaching for a core-looking name;
-  `published_gate.py` holds this manifest to the published set on every run.
+  `lemonfiber plugin claims` holds this manifest to the published set on every
+  run.
 - **No field beyond the contract's set.** A manifest carrying one is refused by
   name rather than ignored (`ARCH-R84`).
 - **Nothing official about this plugin is a privilege.** If it ever needs one to
@@ -67,20 +68,18 @@ manifest carrying one is refused.
 
 ```
 just ci        # every gate CI runs over this repository, in CI's order
-just live      # the same proofs against a running instance
 ```
 
 `just` lists the recipes `ci` is made of. The jobs it does not run are named in
 the `justfile` beside the recipe, with what covers each.
 
-`prove.py` is given `--against fixtures --report proofs.json`, which is what CI
-runs it with. Without `--report` the assertions are proved and `proofs.json` is
-left untouched, so a run that reports everything passing is still refused by
-`git diff --exit-code proofs.json` — which says nothing but the diff.
+`reader.py proofs` writes `proofs.json` on every run, and CI then runs
+`git diff --exit-code proofs.json`, so a run that reports everything passing is
+still refused when the committed report is not the one it wrote.
 
 ## The harness is not this repository's
 
-`.github/interim/` is written in
+`.github/reader/` is written in
 [`plugin-template`](https://github.com/lemonfiber/plugin-template) and copied
 here byte for byte. The `harness` job fails when the two differ. Change it there
 and copy it here; changing it here fails.

@@ -13,7 +13,7 @@ One manifest and a directory of recordings. Nothing here runs:
 | `fixtures/` | Recorded responses the proofs run against, so nobody needs a live instance |
 | `targets.toml` | The lemonfiber release this is validated and proved against |
 | `proofs.json` | The proof report CI writes and compares against the committed one |
-| `.github/interim/` | The CI harness, copied byte for byte from `plugin-template`. Not part of what an operator installs |
+| `.github/reader/` | The CI harness, copied byte for byte from `plugin-template`. It asks the lemonfiber release `targets.toml` names about this plugin. Not part of what an operator installs |
 
 The contract is
 [plugin-manifest](https://github.com/lemonfiber/spec/blob/main/20-architecture/contracts/plugin-manifest.md).
@@ -98,8 +98,8 @@ until something asks for it.
 Neither name is in lemonfiber's published core vocabulary, and that is the right
 answer rather than a gap: `F9-R3` keeps a capability nothing bundled implements
 out of the core set, and nothing bundled watches endpoints.
-`.github/interim/published_gate.py` holds this manifest to the published set on
-every run, and goes red the day either name becomes a core one.
+`lemonfiber plugin claims`, which every CI run asks, holds this manifest to the
+vocabulary of the release `targets.toml` names.
 
 ## What it adds to the doctor
 
@@ -214,16 +214,14 @@ pinning, signature check and proof runs apply to any plugin written by anybody.
 
 ```sh
 just ci        # every gate CI runs over this repository, in CI's order
-just live      # the same proofs against a running instance on 127.0.0.1:3001
 ```
 
 `just` lists the recipes `ci` is made of. The CI jobs it does not run are named
 in the `justfile` beside the recipe, with what covers each.
 
-`prove.py` is given `--against fixtures --report proofs.json`, which is what CI
-runs it with. Without `--report` the assertions are proved and `proofs.json` is
-left untouched, so a run that reports everything passing is still refused by
-`git diff --exit-code proofs.json`.
+`reader.py proofs` writes `proofs.json` on every run, and CI then runs
+`git diff --exit-code proofs.json`, so a run that reports everything passing is
+still refused when the committed report is not the one it wrote.
 
 Moving the image pin means re-recording every fixture against the new image in
 the same change.
