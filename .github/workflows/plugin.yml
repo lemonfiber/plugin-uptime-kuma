@@ -1,7 +1,7 @@
 # What this repository says about its own plugin, before anybody reads the diff.
 #
 # `F3-R9` asks for the manifest schema to be validated in CI so a malformed
-# contribution is caught before merge, and `F5-R2` asks for every declared proof
+# contribution is caught before merge, and `F5-R13` asks for every declared proof
 # to run. `F10-R7` is the reason both run *here* rather than only in the
 # catalogue: an author's own repository has to run the same commands the
 # catalogue runs, or the first time a plugin meets them is in somebody else's
@@ -50,10 +50,13 @@ jobs:
         run: python3 .github/reader/reader.py manifest
 
   # Every probe, proof and contributed check, against the recording it names,
-  # which is what lets this run with no live instance anywhere (F10-R4). Anything
-  # that did not pass fails, unproven included (F3-R5). The report is committed,
-  # so a run that would write a different one fails rather than silently
-  # disagreeing with the record the release train reads.
+  # which is what lets this run with no live instance anywhere (F10-R4). One
+  # failing on a recording its manifest declares it fails on, on the constraint
+  # the declaration names, is reported as failing as declared with the reason,
+  # and fails nothing (F10-R13). Anything else that did not pass fails, unproven
+  # included (F3-R5). The report is committed, so a run that would write a
+  # different one fails rather than silently disagreeing with the record the
+  # release train reads.
   proofs:
     runs-on: ubuntu-latest
     steps:
