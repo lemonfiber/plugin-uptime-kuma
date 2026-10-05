@@ -1,3 +1,4 @@
+#:schema https://github.com/lemonfiber/lemonfiber/releases/download/v0.16.0/plugin-manifest.schema.json
 # Uptime Kuma, as a lemonfiber plugin.
 #
 # Contract: https://github.com/lemonfiber/spec/blob/main/20-architecture/contracts/plugin-manifest.md
