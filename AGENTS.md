@@ -1,10 +1,11 @@
 # AGENTS.md — plugin-uptime-kuma
 
-Guidance for any AI agent working in this repo.
-
-> **Common rules for every lemonfiber repo are canonical in the spec:**
-> [50-governance/ai-contributors.md](https://github.com/lemonfiber/spec/blob/main/50-governance/ai-contributors.md).
-> Read them. This file is the `plugin-uptime-kuma`-specific header only.
+> **Start at the roadmap and board on [lemonfiber.app](https://lemonfiber.app),
+> rendered from the report of where every unreleased version stands. Then the
+> rules** every repository shares:
+> [working in the repositories](https://github.com/lemonfiber/spec/blob/main/50-governance/working-in-the-repositories.md)
+> and [the rules for agents](https://github.com/lemonfiber/spec/blob/main/50-governance/ai-contributors.md).
+> This file holds only what is true of this repository.
 
 ## What this repo is
 
@@ -86,8 +87,4 @@ and copy it here; changing it here fails.
 
 ## Before you open a PR
 
-`just ci` turns this clone's git hooks on as its first step, and
-`.githooks/commit-msg` then refuses a commit that CI would refuse — a
-non-conventional subject, a missing sign-off, a missing `Spec:` citation, or a
-trailer crediting an assistant. All four rules are in
-[50-governance/contributing.md](https://github.com/lemonfiber/spec/blob/main/50-governance/contributing.md).
+`just ci` turns this clone's git hooks on as its first step.
