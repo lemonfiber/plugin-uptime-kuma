@@ -8,24 +8,16 @@ stack depends on, and shows you which one stopped answering.
 Without it, you find out an indexer, a tracker or the connection itself is down
 from whatever stopped working because of it.
 
-> **lemonfiber cannot install this plugin yet.** It asks lemonfiber to add a
-> service and to watch its health (`service.add` and `service.health.http`), and
-> no lemonfiber release offers a plugin either. lemonfiber 0.16.0 refuses the
-> install and names both; `--dry-run` shows the same refusal and writes nothing.
-> The rest of this page describes what the plugin does once lemonfiber offers
-> them.
-
 ## What you get
 
 - **Uptime Kuma 2.5.4**, running as a service in your stack.
 - **A link on the stack's dashboard**, in the Automation group. Uptime Kuma is an
   administration tool, so like the stack's other automation services it is
   reachable from this machine only, on port 3001, and gets no household address.
-- **Two more checks in `lemonfiber doctor`**, each with a fix when it fails:
+- **A check in `lemonfiber doctor`**, with a fix when it fails:
 
 | Check | What it notices |
 | --- | --- |
-| Uptime Kuma has been set up, rather than waiting at its first-run screen | Uptime Kuma is running but nobody has set it up, so it is watching nothing |
 | The path the health probe asks for still answers with this service's own state | The address lemonfiber uses to tell whether Uptime Kuma is up has stopped answering with Uptime Kuma's own state, so a passing health check no longer means it is working |
 
 ## What it needs
@@ -84,9 +76,9 @@ installed, where each plugin came from, and how each of its services is reached.
 
 1. **Open Uptime Kuma** from the dashboard, or at `http://127.0.0.1:3001` on
    this machine.
-2. **Finish its first-run screen.** It creates Uptime Kuma's database and its
-   administrator account. Until then, `lemonfiber doctor` reports that it is
-   watching nothing.
+2. **Finish its first-run screen.** It creates Uptime Kuma's administrator
+   account. Its SQLite database is already made: the stack names it when Uptime
+   Kuma first starts.
 3. **Add a monitor for each thing you would want to know had gone**, and the
    notification channels you want to hear from it on.
 
@@ -166,12 +158,14 @@ a directory holding something it did not put there, and it lists what it left.
 
 ## Licence
 
-The plugin data in this repository is under the Hippocratic License 3.0
+The plugin data and the adapter in this repository are under the Hippocratic License 3.0
 (HL3-CORE); see [LICENSE](LICENSE). Uptime Kuma itself is under the MIT licence
 and is not distributed here: this repository names an image, it does not
 contain one.
 
 ## Working on this plugin
 
-How the manifest is built, what each proof establishes, and how to run the
-checks CI runs: [docs/development.md](docs/development.md).
+The repository also holds `uptime-kuma-adapter`, the adapter that speaks
+lemonfiber's `owner.claim` contract in front of Uptime Kuma, built and published
+from here. `plugin.toml` does not run it yet. How to work on either, and the
+checks CI runs: [AGENTS.md](AGENTS.md).

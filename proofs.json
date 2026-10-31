@@ -1,5 +1,5 @@
 {
-  "lemonfiber": "0.16.0",
+  "lemonfiber": "73539d17ce7497324a03032861dcd4dfdd451f6f",
   "against": "recordings",
   "proofs": [
     {
@@ -11,18 +11,6 @@
     {
       "id": "uptime-kuma.status-is-not-an-answer",
       "kind": "proof",
-      "outcome": "passed",
-      "detail": ""
-    },
-    {
-      "id": "uptime-kuma.state-outlives-its-container",
-      "kind": "proof",
-      "outcome": "passed",
-      "detail": ""
-    },
-    {
-      "id": "uptime-kuma:set-up",
-      "kind": "check",
       "outcome": "passed",
       "detail": ""
     },

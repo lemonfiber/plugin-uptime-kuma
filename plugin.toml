@@ -1,4 +1,4 @@
-#:schema https://github.com/lemonfiber/lemonfiber/releases/download/v0.16.0/plugin-manifest.schema.json
+#:schema https://raw.githubusercontent.com/lemonfiber/lemonfiber/73539d17ce7497324a03032861dcd4dfdd451f6f/contract/plugin-manifest.schema.json
 # Uptime Kuma, as a lemonfiber plugin.
 #
 # Contract: https://github.com/lemonfiber/spec/blob/main/20-architecture/contracts/plugin-manifest.md
@@ -58,8 +58,7 @@ takes_data  = false
 # writable by anybody else.
 #
 # One directory, one mount, the source still lemonfiber's. Only the target is
-# named here. See spec#386 and docs/development.md for the run that showed both
-# halves.
+# named here. See spec#386 for the run that showed both halves.
 config_path = "/app/data"
 
 # What it can do (F4-R1), namespaced with the plugin's id (F4-R4).
@@ -75,6 +74,12 @@ provides = [
     "uptime-kuma:status-page",
 ]
 
+# SQLite, chosen here rather than on Uptime Kuma's first screen, so the database
+# exists from its first start and the first run asks for nothing but the
+# administrator.
+[service.env]
+UPTIME_KUMA_DB_TYPE = "sqlite"
+
 # A list, and one entry, because wiring is a fact about a service rather than
 # about a plugin (ARCH-R127). One service here, so the entry names none.
 [[wiring]]
@@ -82,7 +87,7 @@ provides = [
 dashboard_group = "Automation"
 
 [requires]
-capabilities = ["service.add", "service.health.http", "doctor.contribute"]
+capabilities = ["doctor.contribute"]
 
 # ─── Proofs ──────────────────────────────────────────────────────────────────
 #
@@ -107,8 +112,9 @@ fixture = "fixtures/api-entry-page.json"
 why     = """
 `/api/entry-page` is the endpoint the health probe asks for, and the only one
 that answers an anonymous caller with JSON about this instance rather than with
-the app shell. `type` says which front door is in force: `setup-database` before
-anybody has set it up, `entryPage` afterwards.
+the app shell. `type` says which front door is in force: `entryPage` here, since
+the environment names the database and Uptime Kuma makes it at start, and
+`setup-database` where an image asked for one on its first screen.
 
 Both are a service that is answering, which is what the probe is for — so this
 asserts the field is present and is a string, not which value it holds.
@@ -140,33 +146,14 @@ running instance, which is what a fixture drifting looks like from the outside.
 request = { method = "GET", path = "/api/not-a-real-path" }
 expect  = { status = 200, content_type = "text/html", json_is_absent = true, body_starts_with = "<!DOCTYPE html>" }
 
-[[proof]]
-id      = "uptime-kuma.state-outlives-its-container"
-title   = "Set up, destroyed and recreated, it is still set up"
-fixture = "fixtures/api-entry-page-after-recreate.json"
-why     = """
-The proof that `config_path` is doing its job, and the one that would have caught
-this plugin being broken.
-
-`/api/entry-page` reports `setup-database` until the database exists and
-`entryPage` afterwards, which makes it a readable answer to "is there durable
-state here". The recording is taken from a container that was set up, removed
-entirely, and created again on the same mount. Against the old generated shape —
-the configuration directory at `/config` — the same sequence answers
-`setup-database`, because the database was in the container's writable layer and
-went with it.
-"""
-request = { method = "GET", path = "/api/entry-page" }
-expect  = { status = 200, content_type = "application/json", json = { type = "entryPage" } }
-
 # ─── Contributions ───────────────────────────────────────────────────────────
 #
 # A row in a register lemonfiber already runs, never an interpreter of its own
 # (F3-R26). Both capabilities above are inert, so this is where this plugin is
-# useful rather than merely readable: it adds two things lemonfiber will say
+# useful rather than merely readable: it adds one thing lemonfiber will say
 # about the stack that lemonfiber could not have known to say.
 #
-# Both ask something no credential is needed for, deliberately. This service has
+# It asks something no credential is needed for, deliberately. This service has
 # no REST API beyond what an anonymous caller can reach — everything else is
 # socket.io — so a check needing a credential would report `unrun` on every
 # doctor run until recipes arrive, and a check that quietly never runs is worse
@@ -174,48 +161,11 @@ expect  = { status = 200, content_type = "application/json", json = { type = "en
 
 [[contribution]]
 at        = "doctor.check"
-id        = "uptime-kuma:set-up"
-title     = "Uptime Kuma has been set up, rather than waiting at its first-run screen"
-category  = "services"
-timeout_s = 10
-fixture   = "fixtures/api-entry-page-set-up.json"
-why       = """
-An Uptime Kuma nobody has opened is running, healthy, green in `lemonfiber ps` —
-and watching nothing. That is the failure this service has: not that it goes
-down, but that it never started doing the one thing it was installed for, and
-every surface reports it as fine.
-
-`/api/entry-page` is the one anonymous answer that tells the two apart:
-`setup-database` before its database exists and `entryPage` afterwards. Nothing
-else here distinguishes them, which is why this is a check rather than a note in
-a README.
-"""
-request   = { method = "GET", path = "/api/entry-page" }
-expect    = { status = 200, json = { type = "entryPage" } }
-
-[[contribution]]
-at     = "doctor.remedy"
-id     = "uptime-kuma:finish-setting-it-up"
-for    = "uptime-kuma:set-up"
-action = "Open Uptime Kuma and finish setting it up, then add a monitor for each thing you would want to know had gone"
-why    = """
-It is running and it is watching nothing. Until somebody opens it, the thing
-installed to notice failures is the one failure nothing is noticing.
-"""
-detail = """
-The first screen creates the database and the administrator account. Both are
-kept under the declared configuration directory, so they survive a container
-being replaced — which is what the `state-outlives-its-container` proof
-establishes.
-"""
-
-[[contribution]]
-at        = "doctor.check"
 id        = "uptime-kuma:api-still-answers-json"
 title     = "The path the health probe asks for still answers with this service's own state"
 category  = "config"
 timeout_s = 10
-fixture   = "fixtures/api-entry-page-set-up.json"
+fixture   = "fixtures/api-entry-page-state.json"
 why       = """
 This image answers 200 with its single-page app for every path it does not
 implement. That is how a client-routed application serves deep links, and it
