@@ -3,71 +3,41 @@ default:
     @just --list
 
 # Turn on the repository's own git hooks. Once per clone.
-#
-# There is no package manager here, so there is no `npm ci` or `composer install`
-# to hang `core.hooksPath` on the way the other repos do — it is this recipe or
-# nothing, and `ci` depends on it so that running the checks once turns the hooks
-# on for good. The setting is per-clone local config and no commit can carry it.
-#
-# Turn on this clone's git hooks. Once per clone.
 hooks:
     git config core.hooksPath .githooks
     @echo "hooks on: .githooks/commit-msg, .githooks/pre-push"
 
-# Every gate CI runs over the contents of this repository, in the order CI runs
-# them, plus the hooks that answer for the commit message.
-#
-# Six jobs are not here, and naming them is the point — a recipe that claims to
-# be CI and is a subset of it teaches people to skip it and read the run instead.
-#
-#   commitlint, dco, attribution, spec-check   `.githooks/commit-msg` refuses all
-#                                              four of these before the push, and
-#                                              `hooks` above is what turns it on
-#   harness                                    `.github/reader/` here is compared
-#                                              byte for byte against
-#                                              plugin-template's, which needs
-#                                              both trees
-#   shared-files, pins, workflow-pins          need a lemonfiber/spec checkout and
-#                                              the forge to compare against
-#   actionlint, markdown, invite               need tools this repository does not
-#                                              otherwise ask for; `npx
-#                                              markdownlint-cli2 "**/*.md"` and
-#                                              `actionlint` are the two commands
-#   osv-scanner, gitleaks, label               forge-side, and decide nothing about
-#                                              a manifest
-#
-# Every gate CI runs over this repository's contents — not the whole of CI.
-ci: hooks reader manifest proofs image typos links
+# The gates that need nothing but this tree, in CI's order. The plugin verdict
+# (spec's first-party-plugin workflow) and the conformance recordings, which
+# need Docker, run in CI; `just recordings` is the second of them.
+ci: hooks fmt clippy test coverage deny typos links
 
-# The release `targets.toml` names, fetched once into `.lemonfiber/` and checked
-# against its published digest, and what it says of this plugin. A capability it
-# does not offer a plugin is reported rather than failed on.
-#
-# The release this plugin names, and what it says of it.
-reader:
-    python3 .github/reader/reader.py reader
+# The adapter's format.
+fmt:
+    cargo fmt --check
 
-# Every refusal that release makes of the manifest, each with its location.
-#
-# The manifest, as the release reads it.
-manifest:
-    python3 .github/reader/reader.py manifest
+# The adapter's lints, every warning an error.
+clippy:
+    cargo clippy --all-targets --locked -- -D warnings
 
-# Everything the manifest declares, against the recorded responses — and the
-# committed report is the one this run writes. `reader.py proofs` writes
-# `proofs.json` every time, and CI then runs `git diff --exit-code proofs.json`.
-#
-# Everything the manifest declares, and the report CI diffs.
-proofs:
-    python3 .github/reader/reader.py proofs
-    git diff --exit-code -- proofs.json
+# The adapter's tests.
+test:
+    cargo test --locked
 
-# Every pinned digest is in its registry and its tag still names it, then what
-# vouches for each image. Needs `docker`.
-#
-# The pinned digests, their tags, and what vouches for them.
-image:
-    python3 .github/reader/reader.py image
+# Every line of the adapter the tests can reach, reached.
+coverage:
+    cargo llvm-cov --locked --ignore-filename-regex "$(cat .config/coverage-skipped)" --fail-under-lines 100
+
+# The adapter's dependencies, held to `deny.toml`.
+deny:
+    cargo deny --log-level warn check
+
+# Every recording, taken again with the adapter built from this tree and compared.
+# Needs Docker, and `lemonfiber` at the commit `targets.toml` names on the path.
+recordings:
+    docker build -q -t plugin-uptime-kuma:pr .
+    python3 -c 'import tomllib; print("\n".join(s["image"] + "@" + s["digest"] for s in tomllib.load(open("plugin.toml", "rb"))["service"] if "fronts" not in s))' | xargs -n1 docker pull -q
+    lemonfiber plugin record . --check --adapter plugin-uptime-kuma:pr
 
 # Spell check.
 typos:

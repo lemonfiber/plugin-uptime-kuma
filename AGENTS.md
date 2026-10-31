@@ -9,82 +9,47 @@
 
 ## What this repo is
 
-A plugin's source: the manifest lemonfiber installs Uptime Kuma from — the
-service, what it can do, the proofs it declares and the checks it contributes to
-the doctor — and the recorded responses those run against. It is not the
-reviewed catalogue — that is `lemonfiber-plugins` — and it is not a fork of the
-stack. Contract:
-[plugin-manifest](https://github.com/lemonfiber/spec/blob/main/20-architecture/contracts/plugin-manifest.md).
-
-## `config_path` is load-bearing here
-
-This image has no `/config`; it keeps its database at `/app/data`. Under the
-plugin format as it originally stood there was no field to say so, and this
-plugin was broken two ways — losing every monitor on recreate when run as the
-image's own user, and failing to start at all when run as a non-root one.
-
-That was reported as a defect in the model and the model was changed
-(`F3-R32`, `ARCH-R100`). `config_path = "/app/data"` is the fix, and
-`uptime-kuma.state-outlives-its-container` is the proof that keeps it honest.
-
-**Do not remove or "simplify" that line**, and do not reach for an environment
-variable instead — there is no field for one, deliberately (`ARCH-R101`), and a
-manifest carrying one is refused.
+Uptime Kuma as a first-party lemonfiber plugin: `plugin.toml` and the adapter
+that speaks the `owner.claim@1` contract in front of Uptime Kuma. The adapter is
+the Rust crate at the root, built on `lemonfiber-adapter-kit` from the core at the
+commit `Cargo.toml` pins, into the image the `Dockerfile` builds. `release.yml`
+publishes that image from every commit on `main` and from the train's tag,
+through spec's reusable `adapter-release`. `plugin.toml` runs Uptime Kuma alone,
+with its SQLite database named in the environment, and does not run the adapter
+yet; its proofs' recordings are under `fixtures/`.
 
 ## The rules you cannot break
 
-- **Nothing here executes.** A plugin is declarative data (`F3-R1`), and
-  contributed code is never run, under any opt-in (`F3-R6`). The Python under
-  `.github/reader/` is CI harness and is not part of what an operator installs:
-  it fetches the lemonfiber release `targets.toml` names and asks it.
-- **The plugin is `plugin.toml` and `fixtures/`.** Proofs live in the manifest,
-  not beside it: an installer reads one file, and a proof the installer never
-  reads cannot be what `F3-R4` refuses an install over.
-- **This service is `loopback`, so it gets no proxy hostname.** `[[wiring]]` names
-  none and there is no field by which it could ask. The tier decides.
-- **The image is named by digest** (`F3-R8`). Moving the pin means re-recording
-  every fixture against the new image in the same change.
-- **A proof asserts a body, never only a status.** It matters more here than
-  almost anywhere: this service answers 200 with its single-page app for every
-  path it does not implement, so a status-only proof passes against a build with
-  no API at all.
-- **A proof that could not be run is unproven** (`F3-R5`), never a pass.
-- **A contributed check asks something no credential is needed for.** Everything
-  else this service offers is socket.io, so a check that needed one would report
-  `unrun` on every doctor run until recipes arrive — and a check that quietly
-  never runs is worse than one that fails.
-- **Both capabilities stay namespaced, and that is the answer.** The core
-  vocabulary exists now and neither is in it, because `F9-R3` keeps a capability
-  nothing bundled implements out of the core set and nothing bundled watches
-  endpoints. Do not "fix" that by reaching for a core-looking name;
-  `lemonfiber plugin claims` holds this manifest to the published set on every
-  run.
-- **No field beyond the contract's set.** A manifest carrying one is refused by
-  name rather than ignored (`ARCH-R84`).
-- **Nothing official about this plugin is a privilege.** If it ever needs one to
-  work, that is a defect in the plugin model and belongs in a spec issue, not in
-  a field here.
+- **The plugin id is the service's id** (`ARCH-R266`).
+- **No Python here.** The reader is spec's `first-party-plugin` workflow's.
+- **No `unwrap`, `expect`, `panic` or indexing** outside tests. The lints in
+  `Cargo.toml` are the core's.
+- **The adapter never writes its credentials.** lemonfiber mints the
+  administrator's name and password and writes them into the adapter's
+  `upstream.json` as `username` and `password` (`ARCH-R315`, `ARCH-R317`). The
+  password is minted as `"password"`, which Uptime Kuma's strength rule takes.
+  The adapter reads them for every claim and never logs them.
+- **Uptime Kuma is asked only over its Socket.IO connection**, Engine.IO 4 over a
+  WebSocket, because it makes and signs in its administrator nowhere else. A
+  connection is asked nothing until Uptime Kuma emits `loginRequired` or
+  `autoLogin`: it adds its handlers after it accepts the connection, and an event
+  emitted before then is lost.
+- **A claim changes nothing Uptime Kuma already holds** (`ARCH-R328`): only an
+  Uptime Kuma that says it waits to be set up is set up, and one set up by anybody
+  else is answered as theirs. An account that asks the minted administrator for a
+  second factor is ours, since only its holder could have turned that on.
+- **The core's crates move with the train.** The `rev` in `Cargo.toml` is the
+  core commit `targets.toml` names, the same for every `lemonfiber-*` crate.
+- **Moving Uptime Kuma's digest** means recording every response again against
+  the new image in the same change, moving `RELEASE` and `DIGEST` in
+  `src/adapter.rs` with it, and committing the `proofs.json` the checks write.
 
 ## Checks
 
 ```
-just ci        # every gate CI runs over this repository, in CI's order
+just ci
 ```
 
-`just` lists the recipes `ci` is made of. The jobs it does not run are named in
-the `justfile` beside the recipe, with what covers each.
-
-`reader.py proofs` writes `proofs.json` on every run, and CI then runs
-`git diff --exit-code proofs.json`, so a run that reports everything passing is
-still refused when the committed report is not the one it wrote.
-
-## The harness is not this repository's
-
-`.github/reader/` is written in
-[`plugin-template`](https://github.com/lemonfiber/plugin-template) and copied
-here byte for byte. The `harness` job fails when the two differ. Change it there
-and copy it here; changing it here fails.
-
-## Before you open a PR
-
-`just ci` turns this clone's git hooks on as its first step.
+The gates that need nothing but this tree. The plugin verdict and the
+recordings run in CI; `just recordings` takes the recordings again locally, with
+Docker.
