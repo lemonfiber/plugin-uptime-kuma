@@ -14,9 +14,10 @@ that speaks the `owner.claim@1` contract in front of Uptime Kuma. The adapter is
 the Rust crate at the root, built on `lemonfiber-adapter-kit` from the core at the
 commit `Cargo.toml` pins, into the image the `Dockerfile` builds. `release.yml`
 publishes that image from every commit on `main` and from the train's tag,
-through spec's reusable `adapter-release`. `plugin.toml` runs Uptime Kuma alone,
-with its SQLite database named in the environment, and does not run the adapter
-yet; its proofs' recordings are under `fixtures/`.
+through spec's reusable `adapter-release`. `plugin.toml` runs Uptime Kuma, with
+its SQLite database named in the environment, and the adapter beside it at the
+image it pins. Its proofs' recordings are under `fixtures/`, and the adapter's
+conformance recordings under `conformance/owner.claim@1/`.
 
 ## The rules you cannot break
 

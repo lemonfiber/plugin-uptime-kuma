@@ -32,9 +32,9 @@ from whatever stopped working because of it.
   `config/uptime-kuma` in your stack directory.
 - **Access to `docker.io`** the first time Uptime Kuma starts, to download the
   image.
-- **No accounts anywhere else.** You create Uptime Kuma's administrator account
-  in Uptime Kuma itself. Any notification channel you want it to use, you set up
-  in Uptime Kuma too.
+- **No accounts anywhere else.** lemonfiber makes Uptime Kuma's administrator
+  account for you when it installs the plugin. Any notification channel you want
+  it to use, you set up in Uptime Kuma itself.
 
 ## Install
 
@@ -76,9 +76,12 @@ installed, where each plugin came from, and how each of its services is reached.
 
 1. **Open Uptime Kuma** from the dashboard, or at `http://127.0.0.1:3001` on
    this machine.
-2. **Finish its first-run screen.** It creates Uptime Kuma's administrator
-   account. Its SQLite database is already made: the stack names it when Uptime
-   Kuma first starts.
+2. **Sign in as the administrator lemonfiber made.** `lemonfiber credentials`
+   lists the account. `lemonfiber credentials --reveal uptime-kuma:admin-username`
+   and `--reveal uptime-kuma:admin-password` print its name and password, asking
+   first. Uptime Kuma's first-run screen never shows: its SQLite
+   database is named when it first starts, and lemonfiber claims it before anyone
+   else can reach it.
 3. **Add a monitor for each thing you would want to know had gone**, and the
    notification channels you want to hear from it on.
 
@@ -167,5 +170,5 @@ contain one.
 
 The repository also holds `uptime-kuma-adapter`, the adapter that speaks
 lemonfiber's `owner.claim` contract in front of Uptime Kuma, built and published
-from here. `plugin.toml` does not run it yet. How to work on either, and the
+from here. `plugin.toml` runs it beside Uptime Kuma. How to work on either, and the
 checks CI runs: [AGENTS.md](AGENTS.md).
