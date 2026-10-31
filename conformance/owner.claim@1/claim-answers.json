@@ -1,0 +1,10 @@
+{
+  "recorded_from": "docker.io/louislam/uptime-kuma@sha256:917318f9d7be5257f43ba412c766a473be336eb451d70744f3b482d0c3997c0e",
+  "note": "The first claim of a fresh Uptime Kuma: the adapter sets up the minted administrator over its Socket.IO connection and signs it in, so the part is ours at once.",
+  "request": {"method": "POST", "path": "/lemonfiber/owner.claim/v1/claim", "accept": "application/json"},
+  "response": {
+    "status": 200,
+    "headers": {"content-type": "application/json"},
+    "json": "ours"
+  }
+}

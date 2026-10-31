@@ -82,8 +82,36 @@ UPTIME_KUMA_DB_TYPE = "sqlite"
 
 # A list, and one entry, because wiring is a fact about a service rather than
 # about a plugin (ARCH-R127). One service here, so the entry names none.
+[[service]]
+id          = "uptime-kuma-adapter"
+name        = "Uptime Kuma adapter"
+image       = "ghcr.io/lemonfiber/uptime-kuma-adapter"
+digest      = "sha256:add1d650380caac77adedc65b42ec6c31f31d8811aea2a3369a6d12387e2021f"
+tag         = "main-bc3eec9e8eae"
+criticality = "enhancing"
+reaches     = ""
+asks_for    = "Nothing beyond this machine. It answers lemonfiber's owner.claim contract by setting up and signing in to Uptime Kuma, beside it, as the administrator lemonfiber minted for it."
+config_path = "/config"
+listens     = 8080
+speaks      = ["owner.claim@1"]
+fronts      = "uptime-kuma"
+upstream    = { username = { secret = "admin-username" }, password = { secret = "admin-password" } }
+
+[[secret]]
+id     = "admin-username"
+of     = "uptime-kuma"
+minted = true
+why    = "The name of the administrator Uptime Kuma is claimed for, which the adapter in front of it signs in as"
+
+[[secret]]
+id     = "admin-password"
+of     = "uptime-kuma"
+minted = "password"
+why    = "The password of the administrator Uptime Kuma is claimed for, which the adapter in front of it signs in with, in the shape Uptime Kuma's password strength check accepts"
+
 [[wiring]]
 # No `hostname`. The tier decided that, not this plugin.
+service         = "uptime-kuma"
 dashboard_group = "Automation"
 
 [requires]
@@ -107,6 +135,7 @@ capabilities = ["doctor.contribute"]
 
 [[proof]]
 id      = "uptime-kuma.serves"
+service = "uptime-kuma"
 title   = "Uptime Kuma answers with its own state on the declared health path"
 fixture = "fixtures/api-entry-page.json"
 why     = """
@@ -124,6 +153,7 @@ expect  = { status = 200, content_type = "application/json", json_has_keys = ["t
 
 [[proof]]
 id      = "uptime-kuma.status-is-not-an-answer"
+service = "uptime-kuma"
 title   = "An unimplemented path answers 200, so a status proves nothing here"
 fixture = "fixtures/api-unimplemented-path.json"
 why     = """
@@ -162,6 +192,7 @@ expect  = { status = 200, content_type = "text/html", json_is_absent = true, bod
 [[contribution]]
 at        = "doctor.check"
 id        = "uptime-kuma:api-still-answers-json"
+service   = "uptime-kuma"
 title     = "The path the health probe asks for still answers with this service's own state"
 category  = "config"
 timeout_s = 10
