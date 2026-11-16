@@ -17,8 +17,7 @@ pub const UPSTREAM: &str = "Uptime Kuma";
 /// The Uptime Kuma release this adapter's recordings were taken from.
 pub const RELEASE: &str = "2.5.4";
 
-/// The digest of the image that release's recordings were taken from.
-pub const DIGEST: &str = "sha256:917318f9d7be5257f43ba412c766a473be336eb451d70744f3b482d0c3997c0e";
+include!(concat!(env!("OUT_DIR"), "/fronted.rs"));
 
 /// What this adapter says it is: the contract it speaks and the release it supports.
 #[must_use]
