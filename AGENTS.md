@@ -42,9 +42,9 @@ conformance recordings under `conformance/owner.claim@1/`.
 - **The core's crates move with the train.** The `rev` in `Cargo.toml` is the
   core commit `targets.toml` names, the same for every `lemonfiber-*` crate.
 - **Moving Uptime Kuma's digest** means recording every response again against
-  the new image in the same change, moving `RELEASE` in `src/adapter.rs` with it
-  (`build.rs` reads `DIGEST` from `plugin.toml`, the digest's one home), and
-  committing the `proofs.json` the checks write.
+  the new image in the same change, moving its `tag` with it (`build.rs` reads
+  `RELEASE` and `DIGEST` from `plugin.toml`, their one home), and committing the
+  `proofs.json` the checks write.
 
 ## Checks
 
