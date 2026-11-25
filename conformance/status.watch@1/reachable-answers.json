@@ -1,0 +1,10 @@
+{
+  "recorded_from": "docker.io/louislam/uptime-kuma@sha256:917318f9d7be5257f43ba412c766a473be336eb451d70744f3b482d0c3997c0e",
+  "note": "Asked after the claim: the minted administrator signs in over Uptime Kuma's socket, so the watcher answers, with no reason given.",
+  "request": {"method": "POST", "path": "/lemonfiber/status.watch/v1/reachable", "accept": "application/json"},
+  "response": {
+    "status": 200,
+    "headers": {"content-type": "application/json"},
+    "json": {"reachable": true, "why": null}
+  }
+}

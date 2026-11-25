@@ -169,6 +169,6 @@ contain one.
 ## Working on this plugin
 
 The repository also holds `uptime-kuma-adapter`, the adapter that speaks
-lemonfiber's `owner.claim` contract in front of Uptime Kuma, built and published
-from here. `plugin.toml` runs it beside Uptime Kuma. How to work on either, and the
-checks CI runs: [AGENTS.md](AGENTS.md).
+lemonfiber's `owner.claim` and `status.watch` contracts in front of Uptime Kuma,
+built and published from here. `plugin.toml` runs it beside Uptime Kuma. How to
+work on either, and the checks CI runs: [AGENTS.md](AGENTS.md).

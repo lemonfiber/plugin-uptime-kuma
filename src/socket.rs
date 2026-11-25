@@ -5,7 +5,8 @@
 //! Only what that needs is spoken: the open packet is read, the default namespace joined
 //! and the event awaited that Uptime Kuma emits once it listens for the rest, a ping is
 //! answered, an event is emitted with an acknowledgement id, and the acknowledgement
-//! carrying that id is read back. Every other packet is passed over.
+//! carrying that id is read back. Every event Uptime Kuma emits while an acknowledgement is
+//! awaited is kept, and every other packet is passed over.
 
 use std::time::Duration;
 
@@ -55,6 +56,7 @@ pub struct Socket {
     stream: WebSocketStream<TcpStream>,
     patience: Duration,
     asked: u64,
+    heard: Vec<Vec<Value>>,
 }
 
 impl Socket {
@@ -85,6 +87,7 @@ impl Socket {
             stream,
             patience,
             asked: 0,
+            heard: Vec::new(),
         };
         let opened = socket.next_text().await?;
         if !opened.starts_with(OPEN) {
@@ -132,7 +135,25 @@ impl Socket {
                         .ok_or(Closed::Unanswered);
                 }
             }
+            if let Some(emitted) = said
+                .strip_prefix(EVENT)
+                .filter(|emitted| emitted.starts_with('['))
+                .and_then(|emitted| serde_json::from_str::<Vec<Value>>(emitted).ok())
+            {
+                self.heard.push(emitted);
+            }
         }
+    }
+
+    /// The arguments of every `event` Uptime Kuma emitted while an acknowledgement was
+    /// awaited, in the order it emitted them.
+    pub fn heard<'a>(&'a self, event: &'a str) -> impl Iterator<Item = &'a [Value]> + 'a {
+        self.heard
+            .iter()
+            .filter_map(move |emitted| match emitted.split_first() {
+                Some((Value::String(name), arguments)) if name == event => Some(arguments),
+                _ => None,
+            })
     }
 
     async fn send(&mut self, text: String) -> Result<(), Closed> {

@@ -6,7 +6,7 @@ rust-version = "1.95"
 repository = "https://github.com/lemonfiber/plugin-uptime-kuma"
 authors = ["NightWorks.io"]
 license-file = "LICENSE"
-description = "Speaks lemonfiber's owner.claim contract in front of Uptime Kuma"
+description = "Speaks lemonfiber's owner.claim and status.watch contracts in front of Uptime Kuma"
 publish = false
 
 [[bin]]
@@ -16,9 +16,10 @@ path = "src/main.rs"
 [dependencies]
 async-trait = "0.1"
 futures-util = { version = "0.3.34", default-features = false, features = ["sink", "std"] }
-lemonfiber-adapter-kit = { git = "https://github.com/lemonfiber/lemonfiber", rev = "73539d17ce7497324a03032861dcd4dfdd451f6f" }
-lemonfiber-contract = { git = "https://github.com/lemonfiber/lemonfiber", rev = "73539d17ce7497324a03032861dcd4dfdd451f6f" }
-lemonfiber-ports = { git = "https://github.com/lemonfiber/lemonfiber", rev = "73539d17ce7497324a03032861dcd4dfdd451f6f" }
+lemonfiber-adapter-kit = { git = "https://github.com/lemonfiber/lemonfiber", rev = "8ba9849a19d2393f73ee16cd3aced74fac1dcff5" }
+lemonfiber-contract = { git = "https://github.com/lemonfiber/lemonfiber", rev = "8ba9849a19d2393f73ee16cd3aced74fac1dcff5" }
+lemonfiber-ports = { git = "https://github.com/lemonfiber/lemonfiber", rev = "8ba9849a19d2393f73ee16cd3aced74fac1dcff5" }
+lemonfiber-random = { git = "https://github.com/lemonfiber/lemonfiber", rev = "8ba9849a19d2393f73ee16cd3aced74fac1dcff5" }
 reqwest = { version = "0.13", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -31,8 +32,8 @@ toml = "1.1"
 [dev-dependencies]
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json"] }
 tower = { version = "0.5", default-features = false, features = ["util"] }
-lemonfiber-fixtures = { git = "https://github.com/lemonfiber/lemonfiber", rev = "73539d17ce7497324a03032861dcd4dfdd451f6f" }
-lemonfiber-plugin = { git = "https://github.com/lemonfiber/lemonfiber", rev = "73539d17ce7497324a03032861dcd4dfdd451f6f" }
+lemonfiber-fixtures = { git = "https://github.com/lemonfiber/lemonfiber", rev = "8ba9849a19d2393f73ee16cd3aced74fac1dcff5" }
+lemonfiber-plugin = { git = "https://github.com/lemonfiber/lemonfiber", rev = "8ba9849a19d2393f73ee16cd3aced74fac1dcff5" }
 toml = "1.1"
 
 [lints.rust]

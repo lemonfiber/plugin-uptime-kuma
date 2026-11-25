@@ -1,0 +1,14 @@
+# What this repository implements, one row per requirement (OPS-R74).
+#
+# `done` means the requirement is met in full by what is here, `partial` that this
+# repository holds its part and the rest lives elsewhere, `open` that nothing here
+# meets it yet. The release gate and the no-stubs gate read this file; a pull
+# request that changes whether a requirement is met changes its row.
+#
+# The contract `status.watch@1`, and which statuses each monitor is given, are the core's;
+# this adapter fills that contract in front of Uptime Kuma (ARCH-R390, ARCH-R433).
+
+requirement = [
+  { id = "ARCH-R390", state = "done", evidence = ["src/uptime_kuma/watching.rs", "src/adapter.rs", "src/uptime_kuma/watching/tests.rs::a_tag_one_monitor_holds_updates_it_in_place_and_removes_any_other_holding_it", "src/uptime_kuma/watching/tests.rs::a_check_lemonfiber_holds_reads_up_on_the_statuses_told_is_left_no_push_token_and_is_not_made_again", "src/uptime_kuma/watching/tests.rs::what_cannot_be_watched_or_is_not_lemonfiber_s_is_refused_before_uptime_kuma_is_asked", "src/uptime_kuma/watching/tests.rs::retiring_removes_every_monitor_holding_the_tag_and_nothing_where_none_does", "src/uptime_kuma/watching/tests.rs::every_monitor_is_read_with_its_beats_and_a_monitor_nobody_signed_in_to_is_unsupported", "src/uptime_kuma/watching/reading/tests.rs::only_a_lemonfiber_tag_under_the_lemonfiber_name_is_lemonfiber_s", "conformance/status.watch@1/provision-answers.json", "conformance/status.watch@1/retire-answers.json", "conformance/status.watch@1/check_in-answers.json"] },
+  { id = "ARCH-R433", state = "done", evidence = ["src/uptime_kuma/watching/shaping.rs", "src/uptime_kuma/watching/shaping/tests.rs::an_address_reads_up_on_the_statuses_it_is_told_alone_and_on_success_where_it_is_told_none", "src/uptime_kuma/watching/tests.rs::a_check_lemonfiber_holds_reads_up_on_the_statuses_told_is_left_no_push_token_and_is_not_made_again"] },
+]

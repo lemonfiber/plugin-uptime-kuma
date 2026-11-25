@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use lemonfiber_adapter_kit::{Kit, Readiness};
 use lemonfiber_contract::adapter::{About, Release};
-use lemonfiber_contract::capabilities::owner;
+use lemonfiber_contract::capabilities::{owner, status};
 
 use crate::uptime_kuma::UptimeKuma;
 
@@ -16,14 +16,14 @@ pub const UPSTREAM: &str = "Uptime Kuma";
 
 include!(concat!(env!("OUT_DIR"), "/fronted.rs"));
 
-/// What this adapter says it is: the contract it speaks and the release it supports.
+/// What this adapter says it is: the contracts it speaks and the release it supports.
 #[must_use]
 pub fn about() -> About {
     About {
-        speaks: vec![lemonfiber_contract::spoken(
-            owner::claim::CAPABILITY,
-            owner::claim::MAJOR,
-        )],
+        speaks: vec![
+            lemonfiber_contract::spoken(owner::claim::CAPABILITY, owner::claim::MAJOR),
+            lemonfiber_contract::spoken(status::watch::CAPABILITY, status::watch::MAJOR),
+        ],
         upstream: UPSTREAM.to_owned(),
         releases: vec![Release {
             version: RELEASE.to_owned(),
@@ -32,7 +32,7 @@ pub fn about() -> About {
     }
 }
 
-/// The contract, served from `uptime_kuma` under `key`, ready while it answers.
+/// The contracts, served from `uptime_kuma` under `key`, ready while it answers.
 #[must_use]
 pub fn kit(key: String, uptime_kuma: Arc<UptimeKuma>) -> Kit {
     let asked = Arc::clone(&uptime_kuma);
@@ -42,7 +42,8 @@ pub fn kit(key: String, uptime_kuma: Arc<UptimeKuma>) -> Kit {
     });
     Kit::new(key, about())
         .ready_when(ready)
-        .serving(owner::claim::served(uptime_kuma))
+        .serving(owner::claim::served(Arc::clone(&uptime_kuma)))
+        .serving(status::watch::served(uptime_kuma))
 }
 
 #[cfg(test)]
