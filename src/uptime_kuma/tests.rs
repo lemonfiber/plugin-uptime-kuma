@@ -2,7 +2,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use lemonfiber_fixtures::http::{Answer, Fake};
-use lemonfiber_ports::service::{Failure, Owner, Ownership as _};
+use lemonfiber_fixtures::ports::Chance;
+use lemonfiber_ports::service::{Claim, Failure, Owner, Ownership as _};
 
 use super::UptimeKuma;
 use crate::socket::tests::{serving, Script};
@@ -39,6 +40,7 @@ fn kuma(base: &str) -> UptimeKuma {
         Arc::new(USERNAME.to_owned()),
         Arc::new(PASSWORD.to_owned()),
         QUICK,
+        Arc::new(Chance::cycling()),
     )
 }
 
@@ -59,7 +61,7 @@ fn heard(packets: &Arc<Mutex<Vec<String>>>) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn refused_saying(outcome: Result<Owner, Failure>, said: &str) -> bool {
+fn refused_saying<T>(outcome: Result<T, Failure>, said: &str) -> bool {
     matches!(outcome, Err(Failure::Refused { detail, .. }) if detail.contains(said))
 }
 
@@ -72,6 +74,7 @@ async fn it_answers_while_uptime_kuma_answers_its_entry_page() {
         Arc::new(USERNAME.to_owned()),
         Arc::new(PASSWORD.to_owned()),
         QUICK,
+        Arc::new(Chance::cycling()),
     );
     assert!(kuma.answers().await);
     assert!(up
@@ -85,6 +88,7 @@ async fn it_answers_while_uptime_kuma_answers_its_entry_page() {
             Arc::new(USERNAME.to_owned()),
             Arc::new(PASSWORD.to_owned()),
             QUICK,
+            Arc::new(Chance::cycling()),
         );
         assert!(!kuma.answers().await);
     }
@@ -101,7 +105,10 @@ async fn an_uptime_kuma_nothing_answers_at_is_settling() {
         .unwrap_or_default();
     drop(listener);
     assert_eq!(kuma(&free).owner().await.ok(), Some(Owner::Settling));
-    assert_eq!(kuma(&free).claim().await.ok(), Some(Owner::Settling));
+    assert_eq!(
+        kuma(&free).claim().await.ok(),
+        Some(Claim::Held(Owner::Settling))
+    );
 }
 
 #[tokio::test]
@@ -132,13 +139,19 @@ async fn a_set_up_uptime_kuma_is_ours_where_the_minted_administrator_signs_in() 
 async fn a_set_up_uptime_kuma_the_minted_administrator_cannot_sign_in_to_is_theirs() {
     let (base, _) = serving(script(&[SET_UP, THEIRS])).await;
     assert_eq!(kuma(&base).owner().await.ok(), Some(Owner::Theirs));
-    assert_eq!(kuma(&base).claim().await.ok(), Some(Owner::Theirs));
+    assert_eq!(
+        kuma(&base).claim().await.ok(),
+        Some(Claim::Held(Owner::Theirs))
+    );
 }
 
 #[tokio::test]
 async fn a_part_already_held_is_answered_as_it_is_and_never_set_up_again() {
     let (base, packets) = serving(script(&[SET_UP, OURS])).await;
-    assert_eq!(kuma(&base).claim().await.ok(), Some(Owner::Ours));
+    assert_eq!(
+        kuma(&base).claim().await.ok(),
+        Some(Claim::Held(Owner::Ours))
+    );
     assert!(!heard(&packets)
         .iter()
         .any(|packet| packet.contains(r#""setup""#)));
@@ -155,7 +168,10 @@ async fn an_open_uptime_kuma_is_set_up_with_the_minted_administrator() {
         OURS,
     ]))
     .await;
-    assert_eq!(kuma(&base).claim().await.ok(), Some(Owner::Ours));
+    assert_eq!(
+        kuma(&base).claim().await.ok(),
+        Some(Claim::Held(Owner::Ours))
+    );
     assert!(heard(&packets).contains(&format!(r#"422["setup","{USERNAME}","{PASSWORD}"]"#)));
 }
 
@@ -200,7 +216,10 @@ async fn a_set_up_another_caller_finished_first_is_answered_as_whoever_holds_it(
         THEIRS,
     ]))
     .await;
-    assert_eq!(kuma(&base).claim().await.ok(), Some(Owner::Theirs));
+    assert_eq!(
+        kuma(&base).claim().await.ok(),
+        Some(Claim::Held(Owner::Theirs))
+    );
 }
 
 #[tokio::test]
@@ -248,7 +267,14 @@ async fn without_the_minted_administrator_nothing_is_set_up_or_signed_in() {
         ),
         (Arc::new(USERNAME.to_owned()), Arc::new(Missing)),
     ] {
-        let kuma = UptimeKuma::new(Fake::silent(), base.clone(), username, password, QUICK);
+        let kuma = UptimeKuma::new(
+            Fake::silent(),
+            base.clone(),
+            username,
+            password,
+            QUICK,
+            Arc::new(Chance::cycling()),
+        );
         assert!(refused_saying(
             kuma.claim().await,
             "this adapter holds no administrator for Uptime Kuma"
@@ -268,9 +294,19 @@ async fn a_set_up_uptime_kuma_is_not_signed_in_to_without_the_minted_administrat
         Arc::new(Missing),
         Arc::new(PASSWORD.to_owned()),
         QUICK,
+        Arc::new(Chance::cycling()),
     );
     assert!(refused_saying(
         kuma.owner().await,
         "this adapter holds no administrator for Uptime Kuma"
+    ));
+}
+
+#[tokio::test]
+async fn the_account_it_is_claimed_through_is_unsupported_since_lemonfiber_minted_it() {
+    assert!(matches!(
+        kuma("http://127.0.0.1:9").claimed_by().await,
+        Err(Failure::Unsupported { detail, .. })
+            if detail == "Uptime Kuma is claimed with the administrator lemonfiber minted, which no outside service names"
     ));
 }

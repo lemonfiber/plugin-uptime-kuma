@@ -1,0 +1,10 @@
+{
+  "recorded_from": "docker.io/louislam/uptime-kuma@sha256:917318f9d7be5257f43ba412c766a473be336eb451d70744f3b482d0c3997c0e",
+  "note": "A check-in of the heartbeat provisioned before it: the adapter finds the push monitor holding the tag and Uptime Kuma takes the push at that monitor's address.",
+  "request": {"method": "POST", "path": "/lemonfiber/status.watch/v1/check_in", "accept": "application/json"},
+  "response": {
+    "status": 200,
+    "headers": {"content-type": "application/json"},
+    "body_starts_with": "null"
+  }
+}

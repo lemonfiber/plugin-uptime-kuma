@@ -144,7 +144,7 @@ fn replayed(answer: &Answer) -> Response {
 async fn every_case_of_every_contract_spoken_is_recorded_and_read_as_the_core_reads_it() {
     let pinned = pinned();
     let spoken = spoken();
-    assert_eq!(spoken, ["owner.claim@1"]);
+    assert_eq!(spoken, ["owner.claim@1", "status.watch@1"]);
     let mut faults = Vec::new();
     for capability in lemonfiber_contract::capabilities::all() {
         let named = lemonfiber_contract::spoken(capability.name, capability.major);

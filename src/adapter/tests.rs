@@ -5,6 +5,7 @@ use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
 use lemonfiber_contract::adapter::{about_path, ready_path, About};
 use lemonfiber_fixtures::http::{Answer, Fake};
+use lemonfiber_fixtures::ports::Chance;
 use tower::ServiceExt as _;
 
 use super::{about, kit, ADDRESS, DIGEST, RELEASE, UPSTREAM};
@@ -21,6 +22,7 @@ fn kuma(fake: &Arc<Fake>, base: &str) -> Arc<UptimeKuma> {
         Arc::new(('q'..='x').collect::<String>()),
         Arc::new(('A'..='P').collect::<String>()),
         Duration::from_millis(300),
+        Arc::new(Chance::cycling()),
     ))
 }
 
@@ -51,9 +53,9 @@ async fn answered_by(
 }
 
 #[test]
-fn it_speaks_the_claim_contract_and_names_the_release_its_recordings_were_taken_from() {
+fn it_speaks_the_claim_and_watch_contracts_and_names_the_release_its_recordings_were_taken_from() {
     let said = about();
-    assert_eq!(said.speaks, ["owner.claim@1"]);
+    assert_eq!(said.speaks, ["owner.claim@1", "status.watch@1"]);
     assert_eq!(said.upstream, UPSTREAM);
     assert_eq!(
         said.releases
@@ -78,6 +80,7 @@ async fn nothing_is_answered_without_the_key_or_under_another() {
     for key in [None, Some("not-the-plugin-s-key")] {
         for (method, path) in [
             ("POST", "/lemonfiber/owner.claim/v1/claim".to_owned()),
+            ("POST", "/lemonfiber/status.watch/v1/provision".to_owned()),
             ("GET", about_path()),
         ] {
             let fake = Fake::silent();
@@ -105,6 +108,27 @@ async fn an_uptime_kuma_nothing_answers_at_is_settling() {
     assert_eq!(
         serde_json::from_slice::<serde_json::Value>(&body).ok(),
         Some(serde_json::json!("settling"))
+    );
+}
+
+#[tokio::test]
+async fn the_watcher_is_answered_as_not_reachable_while_nothing_answers_for_uptime_kuma() {
+    let key = a_key();
+    let (status, body) = answered_by(
+        &Fake::silent(),
+        "http://127.0.0.1:9",
+        "POST",
+        "/lemonfiber/status.watch/v1/reachable",
+        Some(&key),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&body).ok(),
+        Some(serde_json::json!({
+            "reachable": false,
+            "why": "Uptime Kuma is not answering yet"
+        }))
     );
 }
 

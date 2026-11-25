@@ -47,6 +47,7 @@ async fn serve(settings: &Settings) -> Result<(), String> {
             UPSTREAM_PASSWORD,
         )),
         PATIENCE,
+        Arc::new(lemonfiber_random::Os),
     );
     let listener = tokio::net::TcpListener::bind(&settings.listen)
         .await

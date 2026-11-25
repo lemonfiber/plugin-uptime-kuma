@@ -17,9 +17,9 @@ pub(crate) struct Script {
     pub(crate) opening: String,
     /// What it answers the namespace's connect packet with.
     pub(crate) joined: Vec<String>,
-    /// Each event it answers, by name, with the acknowledgement it sends; an event named
-    /// more than once is answered by each in turn, the last repeating, and one it does not
-    /// name goes unanswered.
+    /// Each event it answers, by name, with the packets it sends, one to a line, the
+    /// acknowledgement among them; an event named more than once is answered by each in
+    /// turn, the last repeating, and one it does not name goes unanswered.
     pub(crate) answers: Vec<(&'static str, String)>,
 }
 
@@ -97,8 +97,8 @@ pub(crate) async fn serving(script: Script) -> (String, Arc<Mutex<Vec<String>>>)
                         if found.len() > 1 {
                             answers.remove(at);
                         }
-                        if let Some(answer) = answer {
-                            let _ = socket.send(Message::text(answer)).await;
+                        for packet in answer.iter().flat_map(|answer| answer.lines()) {
+                            let _ = socket.send(Message::text(packet.to_owned())).await;
                         }
                     }
                 }
@@ -155,6 +155,45 @@ async fn an_event_is_asked_with_its_id_and_answered_by_its_acknowledgement_alone
     let heard = heard.lock().map(|heard| heard.clone()).unwrap_or_default();
     assert!(heard.contains(&r#"421["needSetup"]"#.to_owned()));
     assert!(heard.contains(&r#"422["login",{"username":"u"}]"#.to_owned()));
+}
+
+#[tokio::test]
+async fn every_event_emitted_before_the_acknowledgement_is_kept_by_its_name() {
+    let (base, _) = serving(Script {
+        answers: vec![(
+            "login",
+            [
+                r#"42["monitorList",{"1":{"id":1}}]"#,
+                r#"427["asksBack"]"#,
+                r#"42{"not":"a list"}"#,
+                r#"42["heartbeatList","1",[],false]"#,
+                r#"42["heartbeatList","2",[],false]"#,
+                r"42[7]",
+                r#"43{id}[{"ok":true}]"#,
+            ]
+            .join("\n"),
+        )],
+        ..Script::default()
+    })
+    .await;
+    let opened = Socket::open(&base, QUICK).await;
+    assert!(opened.is_ok());
+    let Ok(mut socket) = opened else {
+        return;
+    };
+    assert_eq!(socket.ask("login", &[]).await, Ok(json!({"ok": true})));
+    assert_eq!(
+        socket.heard("monitorList").collect::<Vec<_>>(),
+        [[json!({"1": {"id": 1}})].as_slice()]
+    );
+    assert_eq!(
+        socket
+            .heard("heartbeatList")
+            .filter_map(<[Value]>::first)
+            .collect::<Vec<_>>(),
+        [&json!("1"), &json!("2")]
+    );
+    assert_eq!(socket.heard("asksBack").count(), 0);
 }
 
 #[tokio::test]

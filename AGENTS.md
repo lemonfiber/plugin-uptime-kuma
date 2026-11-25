@@ -10,14 +10,15 @@
 ## What this repo is
 
 Uptime Kuma as a first-party lemonfiber plugin: `plugin.toml` and the adapter
-that speaks the `owner.claim@1` contract in front of Uptime Kuma. The adapter is
-the Rust crate at the root, built on `lemonfiber-adapter-kit` from the core at the
-commit `Cargo.toml` pins, into the image the `Dockerfile` builds. `release.yml`
-publishes that image from every commit on `main` and from the train's tag,
-through spec's reusable `adapter-release`. `plugin.toml` runs Uptime Kuma, with
-its SQLite database named in the environment, and the adapter beside it at the
-image it pins. Its proofs' recordings are under `fixtures/`, and the adapter's
-conformance recordings under `conformance/owner.claim@1/`.
+that speaks the `owner.claim@1` and `status.watch@1` contracts in front of Uptime
+Kuma. The adapter is the Rust crate at the root, built on `lemonfiber-adapter-kit`
+from the core at the commit `Cargo.toml` pins, into the image the `Dockerfile`
+builds. `release.yml` publishes that image from every commit on `main` and from
+the train's tag, through spec's reusable `adapter-release`. `plugin.toml` runs
+Uptime Kuma, with its SQLite database named in the environment, and the adapter
+beside it at the image it pins. Its proofs' recordings are under `fixtures/`, and
+the adapter's conformance recordings under `conformance/`, one directory for each
+contract.
 
 ## The rules you cannot break
 
@@ -30,11 +31,23 @@ conformance recordings under `conformance/owner.claim@1/`.
   `upstream.json` as `username` and `password` (`ARCH-R315`, `ARCH-R317`). The
   password is minted as `"password"`, which Uptime Kuma's strength rule takes.
   The adapter reads them for every claim and never logs them.
-- **Uptime Kuma is asked only over its Socket.IO connection**, Engine.IO 4 over a
-  WebSocket, because it makes and signs in its administrator nowhere else. A
-  connection is asked nothing until Uptime Kuma emits `loginRequired` or
-  `autoLogin`: it adds its handlers after it accepts the connection, and an event
-  emitted before then is lost.
+- **Uptime Kuma is asked over its Socket.IO connection**, Engine.IO 4 over a
+  WebSocket, because it makes, signs in and configures its administrator and
+  monitors nowhere else. A check-in is the one request over HTTP, to the push
+  monitor's own address. A connection is asked nothing until Uptime Kuma emits
+  `loginRequired` or `autoLogin`: it adds its handlers after it accepts the
+  connection, and an event emitted before then is lost.
+- **The adapter signs in with the password once**, and with the token that
+  sign-in answered after that. Uptime Kuma takes twenty password sign-ins a
+  minute across every client, and a provisioning pass asks once for each monitor.
+- **A monitor is lemonfiber's only where it holds the Uptime Kuma tag
+  `lemonfiber`** with one of lemonfiber's tags as its value (`ARCH-R390`). Every
+  other monitor is the operator's: it is read, and never changed or removed. A
+  monitor lemonfiber makes is named its tag once, and a rename by the operator
+  stands.
+- **An address is up on the statuses the provision names alone**
+  (`ARCH-R433`), written as Uptime Kuma's accepted status codes, and on 200 to
+  299, Uptime Kuma's own default, where it names none.
 - **A claim changes nothing Uptime Kuma already holds** (`ARCH-R328`): only an
   Uptime Kuma that says it waits to be set up is set up, and one set up by anybody
   else is answered as theirs. An account that asks the minted administrator for a

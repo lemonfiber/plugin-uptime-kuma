@@ -1,0 +1,10 @@
+{
+  "recorded_from": "docker.io/louislam/uptime-kuma@sha256:917318f9d7be5257f43ba412c766a473be336eb451d70744f3b482d0c3997c0e",
+  "note": "The case's heartbeat, provisioned in a fresh Uptime Kuma: no monitor holds its tag, so a push monitor is made, named and tagged by it, and its id answered with nothing watched instead.",
+  "request": {"method": "POST", "path": "/lemonfiber/status.watch/v1/provision", "accept": "application/json"},
+  "response": {
+    "status": 200,
+    "headers": {"content-type": "application/json"},
+    "json": {"id": "1", "instead": null}
+  }
+}

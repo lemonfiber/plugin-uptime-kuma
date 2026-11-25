@@ -1,0 +1,10 @@
+{
+  "recorded_from": "docker.io/louislam/uptime-kuma@sha256:917318f9d7be5257f43ba412c766a473be336eb451d70744f3b482d0c3997c0e",
+  "note": "Asked of an Uptime Kuma just claimed: it holds no monitor yet, so the list it emits to its administrator is read as empty.",
+  "request": {"method": "POST", "path": "/lemonfiber/status.watch/v1/monitors", "accept": "application/json"},
+  "response": {
+    "status": 200,
+    "headers": {"content-type": "application/json"},
+    "json": []
+  }
+}
